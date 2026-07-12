@@ -147,3 +147,24 @@ python -m uvicorn app.main:app --reload --app-dir backend --log-level debug
 ```
 
 - Set breakpoints in route/service files (for example: `backend/app/api/routes/ingredients.py` and `backend/app/services/ingredient_service.py`) and use VS Code Python debugging to step through requests.
+
+## Troubleshooting
+
+### `npm run dev` fails from the repository root
+
+Run the frontend commands from the `frontend/` directory, or use:
+
+```bash
+npm --prefix frontend run dev
+```
+
+### Tailwind/PostCSS plugin error
+
+If Next.js reports that `tailwindcss` is being used directly as a PostCSS plugin, install the newer plugin package and use the updated config:
+
+- `@tailwindcss/postcss`
+- `frontend/postcss.config.mjs`
+
+### Backend Python version mismatch
+
+If editable install fails because of the Python version, make sure the active environment matches the backend requirement in `backend/pyproject.toml`.
