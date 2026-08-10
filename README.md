@@ -1,170 +1,131 @@
 # MealPrep Planner
 
-MealPrep Planner is a full-stack web application for meal planning, budgeting, and nutrition tracking.
+MealPrep Planner is a full-stack meal planning application focused on ingredients, nutrition, pricing, and future recipe/meal-plan workflows. The repository currently contains a working frontend/backend slice for ingredient management and lookup rather than a fully polished end-to-end planner.
 
-This repository is intentionally built in milestones to keep architecture clean and scalable.
+## Current implementation status
 
-## Vision
+The project is now beyond a simple scaffold. The current implementation includes:
 
-Plan an entire week of meals using reusable recipes and automatically calculate:
+- A Next.js App Router frontend with TypeScript, React, and Tailwind CSS
+- A FastAPI backend with typed settings, CORS, and a structured API router
+- SQLAlchemy models and a SQLite-backed persistence layer using the local file `mealprep.db`
+- A seeded ingredient data model with starter rows created on startup and via Alembic
+- A working ingredient listing endpoint: `GET /api/ingredients`
+- A resolve endpoint: `GET /api/ingredients/resolve?query=...`
+- Optional external ingredient lookup via the USDA FoodData Central API when an API key is configured
+- A typed frontend service layer that calls the backend and renders ingredient data on the home page
 
-- Calories and macros
-- Cost per recipe and serving
-- Weekly grocery list
-- Weekly grocery budget
+## Architecture at a glance
 
-## What Is Implemented Today
+- `frontend/` - Next.js app for the user interface
+  - `app/` hosts the app router pages
+  - `services/` contains API clients
+  - `types/` defines shared frontend types
+- `backend/` - FastAPI application
+  - `app/api/routes/` defines HTTP endpoints
+  - `app/services/` contains business logic
+  - `app/models/` and `app/schemas/` define persistence and response schemas
+  - `app/database/` handles session creation and database setup
+- `docs/` - architecture notes and decision records
+- `.github/` - repository workflows and templates
 
-- Monorepo-style project structure with clear frontend/backend boundaries
-- Next.js frontend scaffold (TypeScript + App Router + Tailwind CSS)
-- FastAPI backend scaffold (typed settings + API router)
-- Health endpoint: `GET /api/health`
-- Ingredients endpoint: `GET /api/ingredients`
-- Ingredient payload includes macro information and pricing information
-- Frontend integration that fetches backend health + ingredients and renders them on the home page
-- Typed frontend service layer for API calls
+## Current API surface
 
-Note: ingredient data is currently seed data from a service module (not database-backed yet).
+The backend currently exposes:
 
-## MVP Targets
+- `GET /api/health` - simple health check
+- `GET /api/ingredients` - list persisted ingredients
+- `GET /api/ingredients/resolve?query=<name>` - look up a food by name
 
-- User accounts
-- Ingredient database
-- Recipe CRUD
-- Weekly planner
-- Grocery list generation
-- USDA FoodData Central integration
-- Manual and automatic pricing
+The resolve flow checks the local database first and then uses the external FoodData Central lookup if needed. Newly resolved ingredients are persisted so future lookups are faster.
 
-## Future Roadmap
-
-- Pantry inventory
-- AI meal plan generation
-- Multi-store pricing
-- Price history
-- Recipe sharing
-
-## Tech Stack
-
-- Frontend: Next.js + React + TypeScript + Tailwind CSS
-- Backend: FastAPI + SQLAlchemy
-- Database: PostgreSQL (production target), SQLite (local development)
-
-## Repository Layout
-
-- `frontend/` - Next.js App Router frontend (TypeScript + Tailwind CSS)
-- `backend/` - FastAPI backend (Python + SQLAlchemy)
-- `docs/` - Architecture notes and decision records
-- `.github/` - GitHub workflows and templates
-
-## Local Setup
+## Local development
 
 ### Prerequisites
 
 - Node.js 20+
 - Python 3.11+
 
-### Frontend Run
+### 1. Create environment files
 
-1. Install dependencies:
+From the repository root:
+
+```bash
+cp frontend/.env.example frontend/.env.local
+cp backend/.env.example backend/.env
+```
+
+### 2. Run the frontend
 
 ```bash
 cd frontend
 npm install
-```
-
-2. Configure environment:
-
-```bash
-cp .env.example .env.local
-```
-
-3. Start dev server:
-
-```bash
 npm run dev
 ```
 
-Frontend runs at `http://localhost:3000`.
+The frontend will be available at `http://localhost:3000`.
 
-### Backend Run
-
-1. Create/activate a virtual environment (example):
+### 3. Run the backend
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+cd backend
+python -m pip install -e '.[dev]'
 ```
 
-2. Install backend dependencies:
-
-```bash
-python -m pip install -e 'backend[dev]'
-```
-
-3. Optional env file:
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-4. Start API server:
+Then start the API:
 
 ```bash
 python -m uvicorn app.main:app --reload --app-dir backend
 ```
 
-Backend runs at `http://127.0.0.1:8000`.
+The backend will be available at `http://127.0.0.1:8000`.
 
-## Debug Instructions
+### 4. Apply database migrations
 
-### Quick Endpoint Checks
+The project includes Alembic scaffolding for schema changes. To apply the current migration:
 
-- Health:
+```bash
+cd backend
+alembic upgrade head
+```
+
+## Quick checks
+
+### Health
 
 ```bash
 curl http://127.0.0.1:8000/api/health
 ```
 
-- Ingredients:
+### Ingredients
 
 ```bash
 curl http://127.0.0.1:8000/api/ingredients
 ```
 
-### Frontend Debug
-
-- Run `npm run dev` in `frontend/`
-- Open `http://localhost:3000`
-- Use browser DevTools network tab to inspect API requests and payloads
-
-### Backend Debug
-
-- Run uvicorn with reload:
+### Resolve an ingredient
 
 ```bash
-python -m uvicorn app.main:app --reload --app-dir backend --log-level debug
+curl "http://127.0.0.1:8000/api/ingredients/resolve?query=chicken%20breast"
 ```
 
-- Set breakpoints in route/service files (for example: `backend/app/api/routes/ingredients.py` and `backend/app/services/ingredient_service.py`) and use VS Code Python debugging to step through requests.
+## Project roadmap
 
-## Troubleshooting
+The next milestones should focus on turning this into a fuller meal-planning product:
 
-### `npm run dev` fails from the repository root
+1. Add CRUD endpoints and UI for managing ingredients
+2. Introduce authentication and user-scoped data
+3. Add recipe and meal-plan entities
+4. Build grocery-list and weekly-planning flows
+5. Expand pricing and nutrition workflows
+6. Consider moving from SQLite to PostgreSQL as the domain grows
 
-Run the frontend commands from the `frontend/` directory, or use:
+## Verification notes
 
-```bash
-npm --prefix frontend run dev
-```
+The current implementation has been sanity-checked with:
 
-### Tailwind/PostCSS plugin error
-
-If Next.js reports that `tailwindcss` is being used directly as a PostCSS plugin, install the newer plugin package and use the updated config:
-
-- `@tailwindcss/postcss`
-- `frontend/postcss.config.mjs`
-
-### Backend Python version mismatch
-
-If editable install fails because of the Python version, make sure the active environment matches the backend requirement in `backend/pyproject.toml`.
+- `cd frontend && npm run typecheck`
+- `cd backend && python -m compileall app`
+- `cd backend && alembic upgrade head`
