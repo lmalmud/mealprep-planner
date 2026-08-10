@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.database.base import Base
 from app.database.session import SessionLocal, engine
 from app.models.ingredient import Ingredient
+from app.models.meal import Meal, MealPlan, MealPlanAssignment, MealIngredient
 
 
 def create_app() -> FastAPI:

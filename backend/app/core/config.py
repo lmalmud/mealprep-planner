@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -11,7 +12,11 @@ class Settings(BaseSettings):
     food_data_central_api_key: str = ""
     food_data_central_base_url: str = "https://api.nal.usda.gov/fdc/v1"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).parent.parent.parent / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache(maxsize=1)
