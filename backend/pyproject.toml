@@ -1,7 +1,7 @@
 [project]
-name = "mealprep-planner-backend"
+name = "macro-and-market-backend"
 version = "0.1.0"
-description = "FastAPI backend for MealPrep Planner"
+description = "FastAPI backend for Macro & Market"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

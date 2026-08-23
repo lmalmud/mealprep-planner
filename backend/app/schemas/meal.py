@@ -20,6 +20,13 @@ class MealCreate(BaseModel):
     ingredients: list[MealIngredientCreate] = Field(default_factory=list)
 
 
+class MealUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    description: str | None = None
+    # When provided, replaces the meal's entire ingredient list.
+    ingredients: list[MealIngredientCreate] | None = None
+
+
 class MealRead(BaseModel):
     id: int
     name: str

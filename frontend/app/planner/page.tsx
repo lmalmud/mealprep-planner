@@ -15,19 +15,18 @@ import {
 import { fetchIngredients } from "@/services/ingredients";
 import { createMeal, createMealPlan, fetchMeals } from "@/services/planner";
 import { useIngredientSearch } from "@/hooks/useIngredientSearch";
+import { computeMealTotals } from "@/lib/mealTotals";
 import type { Ingredient } from "@/types/ingredient";
 import type { Meal, MealCreatePayload, MealPlan, MealPlanAssignmentPayload, MealPlanCreatePayload } from "@/types/meal";
 import NavBar from "@/components/NavBar";
 import IngredientConfirmDialog from "@/components/IngredientConfirmDialog";
 import IngredientQuickAddPanel from "@/components/IngredientQuickAddPanel";
+import MealIngredientsEditor, {
+  EMPTY_MEAL_INGREDIENT_DRAFT,
+  type MealIngredientDraft,
+} from "@/components/MealIngredientsEditor";
 import DraggableMealCard from "@/components/DraggableMealCard";
 import CalendarDropCell from "@/components/CalendarDropCell";
-
-type MealIngredientDraft = {
-  ingredient_id: string;
-  quantity_amount: string;
-  quantity_unit: string;
-};
 
 const PLANNER_SLOTS = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -37,10 +36,11 @@ export default function PlannerPage() {
   const [mealName, setMealName] = useState("");
   const [mealDescription, setMealDescription] = useState("");
   const [mealIngredients, setMealIngredients] = useState<MealIngredientDraft[]>([
-    { ingredient_id: "", quantity_amount: "", quantity_unit: "g" },
+    { ...EMPTY_MEAL_INGREDIENT_DRAFT },
   ]);
   const [mealFeedback, setMealFeedback] = useState("");
   const [creatingMeal, setCreatingMeal] = useState(false);
+  const [addingForRowIndex, setAddingForRowIndex] = useState<number | null>(null);
 
   const {
     pendingCandidate,
@@ -57,6 +57,15 @@ export default function PlannerPage() {
         const exists = previous.some((ing) => ing.id === ingredient.id);
         return exists ? previous : [ingredient, ...previous];
       });
+      if (addingForRowIndex !== null) {
+        const index = addingForRowIndex;
+        setMealIngredients((previous) =>
+          previous.map((entry, entryIndex) =>
+            entryIndex === index ? { ...entry, ingredient_id: String(ingredient.id) } : entry
+          )
+        );
+        setAddingForRowIndex(null);
+      }
     },
   });
 
@@ -82,31 +91,6 @@ export default function PlannerPage() {
     void loadData();
   }, []);
 
-  function computeMealTotals(meal: Meal) {
-    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, price: 0, priceIncomplete: false };
-    for (const item of meal.ingredients) {
-      const ing = ingredients.find((i) => i.id === item.ingredient_id);
-      if (!ing) continue;
-      // assume ingredient macros are per 100g of serving_unit; compute factor
-      const factor = (Number(item.quantity_amount) || 0) / 100;
-      totals.calories += (ing.macros.calories_kcal || 0) * factor;
-      totals.protein += (ing.macros.protein_g || 0) * factor;
-      totals.carbs += (ing.macros.carbs_g || 0) * factor;
-      totals.fat += (ing.macros.fat_g || 0) * factor;
-
-      // If the price is explicitly for a different quantity than serving_unit
-      // (e.g. a whole package vs. a per-serving macro basis), scaling it by
-      // the same factor as macros would be misleading — skip it and flag the
-      // total as incomplete rather than showing a fabricated number.
-      if (ing.price.unit && ing.price.unit !== ing.serving_unit) {
-        totals.priceIncomplete = true;
-      } else {
-        totals.price += (ing.price.amount || 0) * factor;
-      }
-    }
-    return totals;
-  }
-
   useEffect(() => {
     const nextAssignments = Array.from({ length: Math.max(1, Number(durationDays) || 1) }, (_, dayIndex) =>
       PLANNER_SLOTS.map((slot) => ({
@@ -125,20 +109,9 @@ export default function PlannerPage() {
     });
   }, [durationDays]);
 
-  function updateMealIngredient(index: number, field: keyof MealIngredientDraft, value: string) {
-    setMealIngredients((previous) =>
-      previous.map((ingredientEntry, ingredientIndex) =>
-        ingredientIndex === index ? { ...ingredientEntry, [field]: value } : ingredientEntry
-      )
-    );
-  }
-
-  function addMealIngredient() {
-    setMealIngredients((previous) => [...previous, { ingredient_id: "", quantity_amount: "", quantity_unit: "g" }]);
-  }
-
-  function removeMealIngredient(index: number) {
-    setMealIngredients((previous) => previous.filter((_, ingredientIndex) => ingredientIndex !== index));
+  function requestAddIngredientForRow(index: number, query: string) {
+    setAddingForRowIndex(index);
+    void searchIngredient(query);
   }
 
   async function handleCreateMeal(event: FormEvent<HTMLFormElement>) {
@@ -175,42 +148,13 @@ export default function PlannerPage() {
       setMeals((previous) => [createdMeal, ...previous]);
       setMealName("");
       setMealDescription("");
-      setMealIngredients([{ ingredient_id: "", quantity_amount: "", quantity_unit: "g" }]);
+      setMealIngredients([{ ...EMPTY_MEAL_INGREDIENT_DRAFT }]);
       setMealFeedback(`Created meal “${createdMeal.name}”.`);
     } catch (error) {
       setMealFeedback(error instanceof Error ? error.message : "Unable to create the meal.");
     } finally {
       setCreatingMeal(false);
     }
-  }
-
-  function renderMealSummary(meal: Meal) {
-    const totals = computeMealTotals(meal);
-    return (
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[var(--color-fg-muted)]">
-        <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
-          Calories: {totals.calories.toFixed(0)}
-        </span>
-        <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
-          Protein: {totals.protein.toFixed(1)}g
-        </span>
-        <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
-          Carbs: {totals.carbs.toFixed(1)}g
-        </span>
-        <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
-          Fat: {totals.fat.toFixed(1)}g
-        </span>
-        <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
-          Price: {ingredients[0]?.price.currency ?? "USD"} {totals.price.toFixed(2)}
-          {totals.priceIncomplete ? "+" : ""}
-        </span>
-        {totals.priceIncomplete ? (
-          <span className="text-xs text-[var(--color-fg-faint)]">
-            Some ingredients are priced per a different unit and aren&rsquo;t included above.
-          </span>
-        ) : null}
-      </div>
-    );
   }
 
   function updateAssignment(dayIndex: number, slot: string, mealId: number) {
@@ -282,13 +226,28 @@ export default function PlannerPage() {
     return assignments.find((assignment) => assignment.day_index === dayIndex && assignment.slot === slot)?.meal_id ?? 0;
   }
 
+  function computeDayTotals(assignmentsForDay: { slot: string; meal_id: number }[]) {
+    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    for (const slot of PLANNER_SLOTS) {
+      const mealId = assignmentsForDay.find((assignment) => assignment.slot === slot)?.meal_id ?? 0;
+      const meal = meals.find((m) => m.id === mealId);
+      if (!meal) continue;
+      const t = computeMealTotals(meal, ingredients);
+      totals.calories += t.calories;
+      totals.protein += t.protein;
+      totals.carbs += t.carbs;
+      totals.fat += t.fat;
+    }
+    return totals;
+  }
+
   function computePlanTotals(plan: MealPlan | null) {
     const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, price: 0, priceIncomplete: false };
     if (!plan) return totals;
     for (const assignment of plan.assignments) {
       const meal = meals.find((m) => m.id === assignment.meal_id);
       if (!meal) continue;
-      const t = computeMealTotals(meal);
+      const t = computeMealTotals(meal, ingredients);
       totals.calories += t.calories;
       totals.protein += t.protein;
       totals.carbs += t.carbs;
@@ -306,7 +265,7 @@ export default function PlannerPage() {
         <div className="mx-auto flex max-w-6xl flex-col gap-8">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] pb-8">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-[var(--color-fg-faint)]">MealPrep Planner</p>
+            <p className="text-sm font-medium uppercase tracking-wide text-[var(--color-fg-faint)]">Macro & Market</p>
             <h1 className="mt-1 text-4xl">Build your meal plan</h1>
             <p className="mt-3 max-w-2xl text-[var(--color-fg-muted)]">
               Create reusable meals with specific foods and quantities, then place those meals into a time period such as a week.
@@ -355,62 +314,12 @@ export default function PlannerPage() {
                 feedback={ingredientSearchFeedback}
               />
 
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-[var(--color-fg)]">Foods in this meal</h3>
-                <button type="button" onClick={addMealIngredient} className="btn btn-secondary btn-sm">
-                  Add food
-                </button>
-              </div>
-
-              {mealIngredients.map((ingredientEntry, index) => (
-                <div
-                  key={`${ingredientEntry.ingredient_id}-${index}`}
-                  className="grid gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 md:grid-cols-[2fr_1fr_1fr_auto]"
-                >
-                  <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-                    Food
-                    <select
-                      value={ingredientEntry.ingredient_id}
-                      onChange={(event) => updateMealIngredient(index, "ingredient_id", event.target.value)}
-                      className="field mt-1"
-                    >
-                      <option value="">Select an ingredient</option>
-                      {ingredients.map((ingredient) => (
-                        <option key={ingredient.id} value={ingredient.id}>
-                          {ingredient.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-                    Quantity
-                    <input
-                      value={ingredientEntry.quantity_amount}
-                      onChange={(event) => updateMealIngredient(index, "quantity_amount", event.target.value)}
-                      className="field mt-1"
-                      placeholder="200"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                    />
-                  </label>
-
-                  <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-                    Unit
-                    <input
-                      value={ingredientEntry.quantity_unit}
-                      onChange={(event) => updateMealIngredient(index, "quantity_unit", event.target.value)}
-                      className="field mt-1"
-                      placeholder="g"
-                    />
-                  </label>
-
-                  <button type="button" onClick={() => removeMealIngredient(index)} className="btn btn-danger self-end">
-                    Remove
-                  </button>
-                </div>
-              ))}
+              <MealIngredientsEditor
+                ingredients={ingredients}
+                entries={mealIngredients}
+                onChange={setMealIngredients}
+                onRequestAdd={requestAddIngredientForRow}
+              />
             </div>
 
             <div className="flex items-center gap-3">
@@ -426,19 +335,22 @@ export default function PlannerPage() {
           <section className="surface-card p-6">
             <h3 className="text-xl">Saved meals</h3>
             <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-              Drag a meal onto the calendar below to assign it, or use the dropdown in each cell.
+              Drag a meal onto the calendar below to assign it, or use the dropdown in each cell. Manage full
+              details (edit, ingredients) from the home page.
             </p>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {meals.length ? (
-                meals.map((meal) => (
-                  <DraggableMealCard key={meal.id} meal={meal}>
-                    <div className="font-medium text-[var(--color-fg)]">{meal.name}</div>
-                    <div className="text-sm text-[var(--color-fg-muted)]">{meal.description}</div>
-                    {renderMealSummary(meal)}
-                  </DraggableMealCard>
-                ))
+                meals.map((meal) => {
+                  const totals = computeMealTotals(meal, ingredients);
+                  return (
+                    <DraggableMealCard key={meal.id} meal={meal}>
+                      <div className="truncate text-sm font-medium text-[var(--color-fg)]">{meal.name}</div>
+                      <div className="text-xs text-[var(--color-fg-faint)]">{totals.calories.toFixed(0)} cal</div>
+                    </DraggableMealCard>
+                  );
+                })
               ) : (
-                <div className="text-sm text-[var(--color-fg-faint)]">No saved meals yet.</div>
+                <div className="col-span-full text-sm text-[var(--color-fg-faint)]">No saved meals yet.</div>
               )}
             </div>
           </section>
@@ -495,30 +407,51 @@ export default function PlannerPage() {
                           {slot}
                         </th>
                       ))}
+                      <th className="px-3 py-3 text-left font-medium">Day total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {Array.from({ length: Math.max(1, Number(durationDays) || 1) }, (_, dayIndex) => (
-                      <tr key={dayIndex} className="border-b border-[var(--color-border)] last:border-b-0">
-                        <td className="px-3 py-3 font-medium text-[var(--color-fg)]">Day {dayIndex + 1}</td>
-                        {PLANNER_SLOTS.map((slot) => (
-                          <CalendarDropCell key={`${dayIndex}-${slot}`} dayIndex={dayIndex} slot={slot}>
-                            <select
-                              value={getAssignmentMealId(dayIndex, slot)}
-                              onChange={(event) => updateAssignment(dayIndex, slot, Number(event.target.value))}
-                              className="field field-sm"
-                            >
-                              <option value="0">Select a meal</option>
-                              {meals.map((meal) => (
-                                <option key={meal.id} value={meal.id}>
-                                  {meal.name}
-                                </option>
-                              ))}
-                            </select>
-                          </CalendarDropCell>
-                        ))}
-                      </tr>
-                    ))}
+                    {Array.from({ length: Math.max(1, Number(durationDays) || 1) }, (_, dayIndex) => {
+                      const dayAssignments = PLANNER_SLOTS.map((slot) => ({
+                        slot,
+                        meal_id: getAssignmentMealId(dayIndex, slot),
+                      }));
+                      const dayTotals = computeDayTotals(dayAssignments);
+                      return (
+                        <tr key={dayIndex} className="border-b border-[var(--color-border)] last:border-b-0">
+                          <td className="px-3 py-3 font-medium text-[var(--color-fg)]">Day {dayIndex + 1}</td>
+                          {PLANNER_SLOTS.map((slot) => (
+                            <CalendarDropCell key={`${dayIndex}-${slot}`} dayIndex={dayIndex} slot={slot}>
+                              <select
+                                value={getAssignmentMealId(dayIndex, slot)}
+                                onChange={(event) => updateAssignment(dayIndex, slot, Number(event.target.value))}
+                                className="field field-sm"
+                              >
+                                <option value="0">Select a meal</option>
+                                {meals.map((meal) => (
+                                  <option key={meal.id} value={meal.id}>
+                                    {meal.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </CalendarDropCell>
+                          ))}
+                          <td className="px-3 py-3 text-[var(--color-fg-muted)]">
+                            {dayTotals.calories > 0 ? (
+                              <>
+                                {dayTotals.calories.toFixed(0)} cal
+                                <div className="text-xs text-[var(--color-fg-faint)]">
+                                  P {dayTotals.protein.toFixed(0)}g · C {dayTotals.carbs.toFixed(0)}g · F{" "}
+                                  {dayTotals.fat.toFixed(0)}g
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-[var(--color-fg-faint)]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -579,9 +512,20 @@ export default function PlannerPage() {
                 })()}
               </div>
               <div className="surface-panel p-4">
-                {Array.from({ length: createdPlan.duration_days }, (_, dayIndex) => (
+                {Array.from({ length: createdPlan.duration_days }, (_, dayIndex) => {
+                  const dayAssignments = createdPlan.assignments.filter((entry) => entry.day_index === dayIndex);
+                  const dayTotals = computeDayTotals(dayAssignments);
+                  return (
                   <div key={dayIndex} className="mb-3 rounded-[var(--radius-sm)] bg-[var(--color-bg-elevated)] p-4 last:mb-0">
-                    <h3 className="text-sm font-semibold text-[var(--color-fg)]">Day {dayIndex + 1}</h3>
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--color-fg)]">Day {dayIndex + 1}</h3>
+                      {dayTotals.calories > 0 ? (
+                        <span className="text-xs text-[var(--color-fg-muted)]">
+                          {dayTotals.calories.toFixed(0)} cal · P {dayTotals.protein.toFixed(0)}g · C{" "}
+                          {dayTotals.carbs.toFixed(0)}g · F {dayTotals.fat.toFixed(0)}g
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {PLANNER_SLOTS.map((slot) => {
                         const assignment = createdPlan.assignments.find(
@@ -599,7 +543,8 @@ export default function PlannerPage() {
                       })}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (

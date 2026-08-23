@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.ingredient import Ingredient
 from app.models.meal import Meal, MealIngredient, MealPlan, MealPlanAssignment
-from app.schemas.meal import MealCreate, MealPlanCreate, MealPlanRead, MealRead
+from app.schemas.meal import MealCreate, MealPlanCreate, MealPlanRead, MealRead, MealUpdate
 
 
 def list_meals(db: Session) -> list[MealRead]:
@@ -26,6 +26,39 @@ def create_meal(db: Session, payload: MealCreate) -> MealRead:
                 quantity_unit=item_payload.quantity_unit,
             )
         )
+
+    db.add(meal)
+    db.commit()
+    db.refresh(meal)
+    return meal.to_read()
+
+
+def update_meal(db: Session, meal_id: int, payload: MealUpdate) -> MealRead:
+    meal = db.get(Meal, meal_id)
+    if meal is None:
+        raise LookupError(f"No meal found with id: {meal_id}")
+
+    updates = payload.model_dump(exclude_unset=True)
+
+    if "name" in updates:
+        meal.name = updates["name"]
+    if "description" in updates:
+        meal.description = updates["description"]
+
+    if payload.ingredients is not None:
+        for item_payload in payload.ingredients:
+            if db.get(Ingredient, item_payload.ingredient_id) is None:
+                raise LookupError(f"Ingredient {item_payload.ingredient_id} not found")
+
+        meal.ingredients.clear()
+        for item_payload in payload.ingredients:
+            meal.ingredients.append(
+                MealIngredient(
+                    ingredient_id=item_payload.ingredient_id,
+                    quantity_amount=item_payload.quantity_amount,
+                    quantity_unit=item_payload.quantity_unit,
+                )
+            )
 
     db.add(meal)
     db.commit()

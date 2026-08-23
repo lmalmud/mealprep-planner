@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Start/stop the whole MealPrep Planner stack (backend + frontend) with one command.
+# Start/stop the whole Macro & Market stack (backend + frontend) with one command.
 #
 #   ./scripts/dev.sh start     # start both services in the background
 #   ./scripts/dev.sh stop      # stop both services

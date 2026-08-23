@@ -25,7 +25,7 @@ export default function DraggableMealCard({ meal, children }: DraggableMealCardP
         touchAction: "none",
         opacity: isDragging ? 0.4 : 1,
       }}
-      className="surface-panel cursor-grab p-4 transition-shadow duration-300 ease-[var(--ease-premium)] active:cursor-grabbing"
+      className="surface-panel cursor-grab p-3 transition-shadow duration-300 ease-[var(--ease-premium)] active:cursor-grabbing"
     >
       {children}
     </div>

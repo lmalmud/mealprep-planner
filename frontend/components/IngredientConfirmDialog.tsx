@@ -26,6 +26,15 @@ export default function IngredientConfirmDialog({
   const [priceCurrency, setPriceCurrency] = useState(candidate.price.currency);
   const [priceHasOwnUnit, setPriceHasOwnUnit] = useState(Boolean(candidate.price.unit));
   const [priceUnit, setPriceUnit] = useState(candidate.price.unit ?? "");
+  const [servingsPerContainer, setServingsPerContainer] = useState(
+    candidate.price.servings_per_container ? String(candidate.price.servings_per_container) : ""
+  );
+
+  const servingsPerContainerValue = Number(servingsPerContainer);
+  const pricePerServing =
+    priceHasOwnUnit && servingsPerContainerValue > 0
+      ? (Number(priceAmount) || 0) / servingsPerContainerValue
+      : null;
 
   function handleConfirm() {
     onConfirm({
@@ -41,6 +50,8 @@ export default function IngredientConfirmDialog({
         amount: Number(priceAmount) || 0,
         currency: priceCurrency.trim() || "USD",
         unit: priceHasOwnUnit && priceUnit.trim() ? priceUnit.trim() : null,
+        servings_per_container:
+          priceHasOwnUnit && servingsPerContainerValue > 0 ? servingsPerContainerValue : null,
       },
     });
   }
@@ -157,15 +168,31 @@ export default function IngredientConfirmDialog({
             </label>
             <p className="mt-1 text-xs leading-relaxed text-[var(--color-fg-faint)]">
               Common with URL-sourced prices — e.g. macros are per 15g serving, but the price is for
-              the whole 480g package.
+              the whole 480g package. Add servings per container for an exact per-serving price.
             </p>
             {priceHasOwnUnit ? (
-              <input
-                value={priceUnit}
-                onChange={(event) => setPriceUnit(event.target.value)}
-                className="field mt-2"
-                placeholder="e.g. 480g or 1 package"
-              />
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <input
+                  value={priceUnit}
+                  onChange={(event) => setPriceUnit(event.target.value)}
+                  className="field"
+                  placeholder="e.g. 480g or 1 package"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={servingsPerContainer}
+                  onChange={(event) => setServingsPerContainer(event.target.value)}
+                  className="field"
+                  placeholder="Servings per container"
+                />
+              </div>
+            ) : null}
+            {priceHasOwnUnit && pricePerServing !== null ? (
+              <p className="mt-1 text-xs text-[var(--color-fg-muted)]">
+                ≈ {priceCurrency.trim() || "USD"} {pricePerServing.toFixed(2)} per {servingUnit.trim() || "serving"}
+              </p>
             ) : null}
           </div>
         </div>

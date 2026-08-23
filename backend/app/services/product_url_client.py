@@ -9,7 +9,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 _MAX_REDIRECTS = 5
-_USER_AGENT = "MealPrepPlanner/0.1 (+product-info fetcher)"
+_USER_AGENT = "MacroAndMarket/0.1 (+product-info fetcher)"
 
 
 _MAX_JSON_SEARCH_NODES = 50_000

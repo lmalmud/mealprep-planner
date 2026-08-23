@@ -1,6 +1,6 @@
 # Frontend
 
-Next.js App Router frontend for MealPrep Planner.
+Next.js App Router frontend for Macro & Market.
 
 ## Responsibilities
 

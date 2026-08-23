@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.schemas.meal import MealCreate, MealPlanCreate, MealPlanRead, MealRead
-from app.services.meal_service import create_meal, create_meal_plan, list_meal_plans, list_meals
+from app.schemas.meal import MealCreate, MealPlanCreate, MealPlanRead, MealRead, MealUpdate
+from app.services.meal_service import create_meal, create_meal_plan, list_meal_plans, list_meals, update_meal
 
 router = APIRouter()
 
@@ -17,6 +17,14 @@ def get_meals(db: Session = Depends(get_db)) -> list[MealRead]:
 def create_meal_endpoint(payload: MealCreate, db: Session = Depends(get_db)) -> MealRead:
     try:
         return create_meal(db, payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.patch("/meals/{meal_id}", response_model=MealRead)
+def update_meal_endpoint(meal_id: int, payload: MealUpdate, db: Session = Depends(get_db)) -> MealRead:
+    try:
+        return update_meal(db, meal_id, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

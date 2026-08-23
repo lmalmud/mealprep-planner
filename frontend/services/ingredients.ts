@@ -36,3 +36,7 @@ export async function updateIngredient(
 export async function deleteIngredient(id: number): Promise<void> {
   return deleteFromApi(`/api/ingredients/${id}`);
 }
+
+export async function getIngredientUsage(id: number): Promise<string[]> {
+  return fetchFromApi<string[]>(`/api/ingredients/${id}/usage`);
+}

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    app_name: str = "MealPrep Planner API"
+    app_name: str = "Macro & Market API"
     app_env: str = "development"
     database_url: str = "sqlite:///./mealprep.db"
     frontend_origin: str = "http://localhost:3000"

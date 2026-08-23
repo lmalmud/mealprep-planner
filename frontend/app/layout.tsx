@@ -16,7 +16,7 @@ const bodyFont = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "MealPrep Planner",
+  title: "Macro & Market",
   description: "Meal planning, recipes, and grocery organization.",
 };
 

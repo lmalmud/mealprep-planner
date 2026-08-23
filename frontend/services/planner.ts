@@ -1,5 +1,5 @@
-import { fetchFromApi, postToApi } from "@/lib/api";
-import type { Meal, MealCreatePayload, MealPlan, MealPlanCreatePayload } from "@/types/meal";
+import { fetchFromApi, patchToApi, postToApi } from "@/lib/api";
+import type { Meal, MealCreatePayload, MealPlan, MealPlanCreatePayload, MealUpdatePayload } from "@/types/meal";
 
 export async function fetchMeals(): Promise<Meal[]> {
   return fetchFromApi<Meal[]>("/api/meals");
@@ -7,6 +7,10 @@ export async function fetchMeals(): Promise<Meal[]> {
 
 export async function createMeal(payload: MealCreatePayload): Promise<Meal> {
   return postToApi<Meal>("/api/meals", payload);
+}
+
+export async function updateMeal(id: number, payload: MealUpdatePayload): Promise<Meal> {
+  return patchToApi<Meal>(`/api/meals/${id}`, payload);
 }
 
 export async function fetchMealPlans(): Promise<MealPlan[]> {

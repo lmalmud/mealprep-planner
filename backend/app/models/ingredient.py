@@ -17,6 +17,7 @@ class Ingredient(Base):
     price_amount: Mapped[float] = mapped_column(Float, nullable=False)
     price_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     price_unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    price_servings_per_container: Mapped[float | None] = mapped_column(Float, nullable=True)
     serving_unit: Mapped[str] = mapped_column(String(50), nullable=False)
 
     def to_read(self) -> IngredientRead:
@@ -34,5 +35,6 @@ class Ingredient(Base):
                 amount=self.price_amount,
                 currency=self.price_currency,
                 unit=self.price_unit,
+                servings_per_container=self.price_servings_per_container,
             ),
         )

@@ -10,10 +10,10 @@ from app.schemas.ingredient import (
 )
 from app.services.food_data_central_client import FoodDataCentralUnavailableError
 from app.services.ingredient_service import (
-    IngredientInUseError,
     IngredientNameConflictError,
     create_ingredient,
     delete_ingredient,
+    get_meal_names_using_ingredient,
     list_ingredients,
     search_ingredient,
     search_ingredient_by_url,
@@ -77,11 +77,14 @@ def update_ingredient_endpoint(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/ingredients/{ingredient_id}/usage", response_model=list[str])
+def get_ingredient_usage_endpoint(ingredient_id: int, db: Session = Depends(get_db)) -> list[str]:
+    return get_meal_names_using_ingredient(db, ingredient_id)
+
+
 @router.delete("/ingredients/{ingredient_id}", status_code=204)
 def delete_ingredient_endpoint(ingredient_id: int, db: Session = Depends(get_db)) -> None:
     try:
         delete_ingredient(db, ingredient_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except IngredientInUseError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc

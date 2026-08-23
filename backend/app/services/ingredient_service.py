@@ -1,8 +1,8 @@
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.ingredient import Ingredient
-from app.models.meal import MealIngredient
+from app.models.meal import Meal, MealIngredient, MealPlanAssignment
 from app.schemas.ingredient import (
     IngredientCreate,
     IngredientMacros,
@@ -20,10 +20,6 @@ url_client = ProductUrlClient()
 
 
 class IngredientNameConflictError(Exception):
-    pass
-
-
-class IngredientInUseError(Exception):
     pass
 
 
@@ -175,6 +171,7 @@ def create_ingredient(db: Session, payload: IngredientCreate) -> IngredientRead:
         price_amount=payload.price.amount,
         price_currency=payload.price.currency,
         price_unit=payload.price.unit,
+        price_servings_per_container=payload.price.servings_per_container,
     )
     db.add(ingredient)
     db.commit()
@@ -211,6 +208,8 @@ def update_ingredient(db: Session, ingredient_id: int, payload: IngredientUpdate
         ingredient.price_currency = updates["price_currency"]
     if "price_unit" in updates:
         ingredient.price_unit = updates["price_unit"]
+    if "price_servings_per_container" in updates:
+        ingredient.price_servings_per_container = updates["price_servings_per_container"]
 
     db.add(ingredient)
     db.commit()
@@ -218,19 +217,31 @@ def update_ingredient(db: Session, ingredient_id: int, payload: IngredientUpdate
     return ingredient.to_read()
 
 
+def get_meal_names_using_ingredient(db: Session, ingredient_id: int) -> list[str]:
+    meal_ids = db.scalars(
+        select(MealIngredient.meal_id).where(MealIngredient.ingredient_id == ingredient_id).distinct()
+    ).all()
+    if not meal_ids:
+        return []
+    return list(db.scalars(select(Meal.name).where(Meal.id.in_(meal_ids))).all())
+
+
 def delete_ingredient(db: Session, ingredient_id: int) -> None:
     ingredient = db.get(Ingredient, ingredient_id)
     if ingredient is None:
         raise LookupError(f"No ingredient found with id: {ingredient_id}")
 
-    in_use = db.scalar(
-        select(MealIngredient.id).where(MealIngredient.ingredient_id == ingredient_id).limit(1)
-    )
-    if in_use is not None:
-        raise IngredientInUseError(
-            f"Cannot delete '{ingredient.name}': it is used in one or more meals. "
-            "Remove it from those meals first."
-        )
+    meal_ids = db.scalars(
+        select(MealIngredient.meal_id).where(MealIngredient.ingredient_id == ingredient_id).distinct()
+    ).all()
+
+    if meal_ids:
+        # Meal plan assignments have no relationship-based cascade from Meal,
+        # so they'd be left dangling (pointing at a deleted meal) unless
+        # removed explicitly before the meals themselves are deleted.
+        db.execute(delete(MealPlanAssignment).where(MealPlanAssignment.meal_id.in_(meal_ids)))
+        for meal in db.scalars(select(Meal).where(Meal.id.in_(meal_ids))):
+            db.delete(meal)  # cascades its MealIngredient rows via the relationship
 
     db.delete(ingredient)
     db.commit()

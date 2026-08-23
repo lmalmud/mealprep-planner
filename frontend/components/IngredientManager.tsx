@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { deleteIngredient, updateIngredient } from "@/services/ingredients";
+import { deleteIngredient, getIngredientUsage, updateIngredient } from "@/services/ingredients";
 import { useIngredientSearch } from "@/hooks/useIngredientSearch";
 import type { Ingredient, IngredientUpdateInput } from "@/types/ingredient";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -18,6 +18,7 @@ type EditDraft = {
   price_amount: string;
   price_currency: string;
   price_unit: string;
+  price_servings_per_container: string;
 };
 
 function toDraft(ingredient: Ingredient): EditDraft {
@@ -31,6 +32,9 @@ function toDraft(ingredient: Ingredient): EditDraft {
     price_amount: String(ingredient.price.amount),
     price_currency: ingredient.price.currency,
     price_unit: ingredient.price.unit ?? "",
+    price_servings_per_container: ingredient.price.servings_per_container
+      ? String(ingredient.price.servings_per_container)
+      : "",
   };
 }
 
@@ -41,6 +45,8 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const [deleteAffectedMeals, setDeleteAffectedMeals] = useState<string[]>([]);
+  const [checkingUsage, setCheckingUsage] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -90,6 +96,9 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
       price_amount: Number(editDraft.price_amount) || 0,
       price_currency: editDraft.price_currency.trim() || "USD",
       price_unit: editDraft.price_unit.trim() || null,
+      price_servings_per_container: Number(editDraft.price_servings_per_container) > 0
+        ? Number(editDraft.price_servings_per_container)
+        : null,
     };
 
     try {
@@ -101,6 +110,22 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
       setEditError(error instanceof Error ? error.message : "Unable to save changes.");
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  async function startDelete(ingredientId: number) {
+    setDeleteError("");
+    setDeleteAffectedMeals([]);
+    setDeleteTargetId(ingredientId);
+    try {
+      setCheckingUsage(true);
+      const mealNames = await getIngredientUsage(ingredientId);
+      setDeleteAffectedMeals(mealNames);
+    } catch {
+      // If the usage check fails, proceed without the extra warning — delete
+      // itself will still succeed (or report a real error) either way.
+    } finally {
+      setCheckingUsage(false);
     }
   }
 
@@ -229,6 +254,16 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                             className="field field-sm w-32"
                             placeholder="per (if different)"
                           />
+                          <input
+                            type="number"
+                            min="1"
+                            value={editDraft.price_servings_per_container}
+                            onChange={(event) =>
+                              setEditDraft({ ...editDraft, price_servings_per_container: event.target.value })
+                            }
+                            className="field field-sm w-32"
+                            placeholder="servings/container"
+                          />
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -270,6 +305,13 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                         {ingredient.price.unit ? (
                           <span className="text-[var(--color-fg-faint)]"> / {ingredient.price.unit}</span>
                         ) : null}
+                        {ingredient.price.unit && ingredient.price.servings_per_container ? (
+                          <div className="text-xs text-[var(--color-fg-faint)]">
+                            ≈ {ingredient.price.currency}{" "}
+                            {(ingredient.price.amount / ingredient.price.servings_per_container).toFixed(2)} per{" "}
+                            {ingredient.serving_unit}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
@@ -282,10 +324,7 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setDeleteError("");
-                              setDeleteTargetId(ingredient.id);
-                            }}
+                            onClick={() => startDelete(ingredient.id)}
                             className="btn btn-danger btn-sm"
                           >
                             Delete
@@ -315,14 +354,19 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
           title="Delete ingredient?"
           message={
             deleteError ||
-            `This will permanently remove "${deleteTarget.name}" from your ingredients.`
+            (checkingUsage
+              ? "Checking whether this ingredient is used in any meals…"
+              : deleteAffectedMeals.length
+                ? `"${deleteTarget.name}" is used in ${deleteAffectedMeals.length} meal(s): ${deleteAffectedMeals.join(", ")}. Deleting it will also delete ${deleteAffectedMeals.length === 1 ? "that meal" : "those meals"}.`
+                : `This will permanently remove "${deleteTarget.name}" from your ingredients.`)
           }
           confirmLabel="Delete"
-          busy={deleting}
+          busy={deleting || checkingUsage}
           onConfirm={confirmDelete}
           onCancel={() => {
             setDeleteTargetId(null);
             setDeleteError("");
+            setDeleteAffectedMeals([]);
           }}
         />
       ) : null}

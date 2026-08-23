@@ -1,6 +1,6 @@
 # Backend
 
-FastAPI backend for MealPrep Planner.
+FastAPI backend for Macro & Market.
 
 ## Responsibilities
 
