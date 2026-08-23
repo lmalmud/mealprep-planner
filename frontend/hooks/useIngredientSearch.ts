@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createIngredient, searchIngredient } from "@/services/ingredients";
+import { createIngredient, searchIngredient, searchIngredientByUrl } from "@/services/ingredients";
 import type { Ingredient, IngredientInput } from "@/types/ingredient";
 
 type UseIngredientSearchOptions = {
@@ -37,6 +37,33 @@ export function useIngredientSearch({ onAdded }: UseIngredientSearchOptions) {
     }
   }
 
+  async function searchByUrl(url: string) {
+    const trimmed = url.trim();
+    setFeedback("");
+
+    if (!trimmed) {
+      setFeedback("Please paste a product URL.");
+      return;
+    }
+
+    try {
+      setSearching(true);
+      const result = await searchIngredientByUrl(trimmed);
+      if (result.status === "existing") {
+        onAdded(result.ingredient);
+        setFeedback(`Added "${result.ingredient.name}" to your ingredients.`);
+      } else {
+        setPendingCandidate(result.candidate);
+      }
+    } catch (error) {
+      setFeedback(
+        error instanceof Error ? error.message : "Unable to extract product info from that URL."
+      );
+    } finally {
+      setSearching(false);
+    }
+  }
+
   async function confirmCandidate(edited: IngredientInput) {
     try {
       setCreating(true);
@@ -61,6 +88,7 @@ export function useIngredientSearch({ onAdded }: UseIngredientSearchOptions) {
     creating,
     feedback,
     search,
+    searchByUrl,
     confirmCandidate,
     cancelCandidate,
   };

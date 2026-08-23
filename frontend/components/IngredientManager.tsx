@@ -6,6 +6,7 @@ import { useIngredientSearch } from "@/hooks/useIngredientSearch";
 import type { Ingredient, IngredientUpdateInput } from "@/types/ingredient";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import IngredientConfirmDialog from "@/components/IngredientConfirmDialog";
+import IngredientQuickAddPanel from "@/components/IngredientQuickAddPanel";
 
 type EditDraft = {
   name: string;
@@ -33,7 +34,6 @@ function toDraft(ingredient: Ingredient): EditDraft {
 
 export default function IngredientManager({ initialIngredients }: { initialIngredients: Ingredient[] }) {
   const [ingredients, setIngredients] = useState<Ingredient[]>(initialIngredients);
-  const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -48,6 +48,7 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
     creating,
     feedback,
     search,
+    searchByUrl,
     confirmCandidate,
     cancelCandidate,
   } = useIngredientSearch({
@@ -124,39 +125,13 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
         <h2 className="text-2xl">Ingredients</h2>
       </div>
 
-      <div className="surface-panel mt-4 p-5">
-        <h3 className="text-sm font-semibold text-[var(--color-fg)]">Add an ingredient</h3>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--color-fg-muted)]">
-          Search the nutrient database by name. Existing ingredients are added instantly; new ones ask
-          you to review the values (especially price) before saving.
-        </p>
-        <div className="mt-3 flex gap-3">
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void search(searchQuery);
-                setSearchQuery("");
-              }
-            }}
-            className="field flex-1"
-            placeholder="e.g. apple, salmon, oats"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              void search(searchQuery);
-              setSearchQuery("");
-            }}
-            disabled={searching}
-            className="btn btn-primary"
-          >
-            {searching ? "Searching…" : "Search"}
-          </button>
-        </div>
-        {feedback ? <p className="mt-2 text-xs text-[var(--color-fg-muted)]">{feedback}</p> : null}
+      <div className="mt-4">
+        <IngredientQuickAddPanel
+          search={search}
+          searchByUrl={searchByUrl}
+          searching={searching}
+          feedback={feedback}
+        />
       </div>
 
       <div className="surface-card mt-5 overflow-x-auto">

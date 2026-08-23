@@ -16,9 +16,6 @@ export default function NavBar() {
           <Link href="/planner" className="btn btn-primary">
             Planner
           </Link>
-          <a href="#" className="link-subtle text-sm">
-            Recipes
-          </a>
         </div>
       </div>
     </nav>

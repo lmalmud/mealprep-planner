@@ -2,6 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import { fetchIngredients } from "@/services/ingredients";
 import { createMeal, createMealPlan, fetchMeals } from "@/services/planner";
 import { useIngredientSearch } from "@/hooks/useIngredientSearch";
@@ -9,6 +19,9 @@ import type { Ingredient } from "@/types/ingredient";
 import type { Meal, MealCreatePayload, MealPlan, MealPlanAssignmentPayload, MealPlanCreatePayload } from "@/types/meal";
 import NavBar from "@/components/NavBar";
 import IngredientConfirmDialog from "@/components/IngredientConfirmDialog";
+import IngredientQuickAddPanel from "@/components/IngredientQuickAddPanel";
+import DraggableMealCard from "@/components/DraggableMealCard";
+import CalendarDropCell from "@/components/CalendarDropCell";
 
 type MealIngredientDraft = {
   ingredient_id: string;
@@ -29,13 +42,13 @@ export default function PlannerPage() {
   const [mealFeedback, setMealFeedback] = useState("");
   const [creatingMeal, setCreatingMeal] = useState(false);
 
-  const [ingredientSearchQuery, setIngredientSearchQuery] = useState("");
   const {
     pendingCandidate,
     searching: searchingIngredient,
     creating: creatingIngredient,
     feedback: ingredientSearchFeedback,
     search: searchIngredient,
+    searchByUrl: searchIngredientByUrl,
     confirmCandidate,
     cancelCandidate,
   } = useIngredientSearch({
@@ -119,12 +132,6 @@ export default function PlannerPage() {
     setMealIngredients((previous) => previous.filter((_, ingredientIndex) => ingredientIndex !== index));
   }
 
-  async function handleSearchIngredient() {
-    const query = ingredientSearchQuery;
-    setIngredientSearchQuery("");
-    await searchIngredient(query);
-  }
-
   async function handleCreateMeal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMealFeedback("");
@@ -199,6 +206,27 @@ export default function PlannerPage() {
           : assignment
       )
     );
+  }
+
+  const [activeDragMealId, setActiveDragMealId] = useState<number | null>(null);
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const mealId = (event.active.data.current as { mealId?: number } | undefined)?.mealId;
+    setActiveDragMealId(mealId ?? null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragMealId(null);
+    const { active, over } = event;
+    if (!over) return;
+    const mealId = (active.data.current as { mealId?: number } | undefined)?.mealId;
+    const target = over.data.current as { dayIndex: number; slot: string } | undefined;
+    if (!mealId || !target) return;
+    updateAssignment(target.dayIndex, target.slot, mealId);
   }
 
   async function handleCreatePlan(event: FormEvent<HTMLFormElement>) {
@@ -304,37 +332,12 @@ export default function PlannerPage() {
             </div>
 
             <div className="space-y-4">
-              <div className="surface-panel p-4">
-                <h3 className="text-sm font-semibold text-[var(--color-fg)]">Search and add ingredients</h3>
-                <p className="mt-1 text-xs leading-relaxed text-[var(--color-fg-muted)]">
-                  Type any food name to search the nutrient database and add it to your available ingredients.
-                </p>
-                <div className="mt-3 flex gap-3">
-                  <input
-                    value={ingredientSearchQuery}
-                    onChange={(event) => setIngredientSearchQuery(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void handleSearchIngredient();
-                      }
-                    }}
-                    className="field flex-1"
-                    placeholder="e.g. apple, salmon, oats"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSearchIngredient}
-                    disabled={searchingIngredient}
-                    className="btn btn-primary"
-                  >
-                    {searchingIngredient ? "Searching…" : "Search"}
-                  </button>
-                </div>
-                {ingredientSearchFeedback ? (
-                  <p className="mt-2 text-xs text-[var(--color-fg-muted)]">{ingredientSearchFeedback}</p>
-                ) : null}
-              </div>
+              <IngredientQuickAddPanel
+                search={searchIngredient}
+                searchByUrl={searchIngredientByUrl}
+                searching={searchingIngredient}
+                feedback={ingredientSearchFeedback}
+              />
 
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-[var(--color-fg)]">Foods in this meal</h3>
@@ -403,113 +406,124 @@ export default function PlannerPage() {
           </form>
         </section>
 
-        <section className="surface-card p-6">
-          <h3 className="text-xl">Saved meals</h3>
-          <div className="mt-4 grid gap-3">
-            {meals.length ? (
-              meals.map((meal) => (
-                <div key={meal.id} className="surface-panel p-4">
-                  <div>
+        <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <section className="surface-card p-6">
+            <h3 className="text-xl">Saved meals</h3>
+            <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
+              Drag a meal onto the calendar below to assign it, or use the dropdown in each cell.
+            </p>
+            <div className="mt-4 grid gap-3">
+              {meals.length ? (
+                meals.map((meal) => (
+                  <DraggableMealCard key={meal.id} meal={meal}>
                     <div className="font-medium text-[var(--color-fg)]">{meal.name}</div>
                     <div className="text-sm text-[var(--color-fg-muted)]">{meal.description}</div>
                     {renderMealSummary(meal)}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-sm text-[var(--color-fg-faint)]">No saved meals yet.</div>
-            )}
-          </div>
-        </section>
-
-        <section className="surface-card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl">2. Create a time period plan</h2>
-              <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-                Choose how many days you want to plan for and assign meals to each day and slot.
-              </p>
+                  </DraggableMealCard>
+                ))
+              ) : (
+                <div className="text-sm text-[var(--color-fg-faint)]">No saved meals yet.</div>
+              )}
             </div>
-          </div>
+          </section>
 
-          <form className="mt-6 space-y-5" onSubmit={handleCreatePlan}>
-            <div className="grid gap-4 md:grid-cols-3">
-              <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-                Plan name
-                <input
-                  value={planName}
-                  onChange={(event) => setPlanName(event.target.value)}
-                  className="field mt-1"
-                  placeholder="Week 1"
-                />
-              </label>
-              <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-                Start date
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="field mt-1"
-                />
-              </label>
-              <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-                Days in plan
-                <input
-                  type="number"
-                  min="1"
-                  value={durationDays}
-                  onChange={(event) => setDurationDays(Number(event.target.value))}
-                  className="field mt-1"
-                />
-              </label>
+          <section className="surface-card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl">2. Create a time period plan</h2>
+                <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
+                  Choose how many days you want to plan for and assign meals to each day and slot.
+                </p>
+              </div>
             </div>
 
-            <div className="surface-card overflow-x-auto">
-              <table className="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-fg-faint)]">
-                    <th className="px-3 py-3 text-left font-medium">Day</th>
-                    {PLANNER_SLOTS.map((slot) => (
-                      <th key={slot} className="px-3 py-3 text-left font-medium capitalize">
-                        {slot}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: Math.max(1, Number(durationDays) || 1) }, (_, dayIndex) => (
-                    <tr key={dayIndex} className="border-b border-[var(--color-border)] last:border-b-0">
-                      <td className="px-3 py-3 font-medium text-[var(--color-fg)]">Day {dayIndex + 1}</td>
+            <form className="mt-6 space-y-5" onSubmit={handleCreatePlan}>
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="text-sm font-medium text-[var(--color-fg-muted)]">
+                  Plan name
+                  <input
+                    value={planName}
+                    onChange={(event) => setPlanName(event.target.value)}
+                    className="field mt-1"
+                    placeholder="Week 1"
+                  />
+                </label>
+                <label className="text-sm font-medium text-[var(--color-fg-muted)]">
+                  Start date
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    className="field mt-1"
+                  />
+                </label>
+                <label className="text-sm font-medium text-[var(--color-fg-muted)]">
+                  Days in plan
+                  <input
+                    type="number"
+                    min="1"
+                    value={durationDays}
+                    onChange={(event) => setDurationDays(Number(event.target.value))}
+                    className="field mt-1"
+                  />
+                </label>
+              </div>
+
+              <div className="surface-card overflow-x-auto">
+                <table className="min-w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-fg-faint)]">
+                      <th className="px-3 py-3 text-left font-medium">Day</th>
                       {PLANNER_SLOTS.map((slot) => (
-                        <td key={`${dayIndex}-${slot}`} className="px-3 py-3">
-                          <select
-                            value={getAssignmentMealId(dayIndex, slot)}
-                            onChange={(event) => updateAssignment(dayIndex, slot, Number(event.target.value))}
-                            className="field field-sm"
-                          >
-                            <option value="0">Select a meal</option>
-                            {meals.map((meal) => (
-                              <option key={meal.id} value={meal.id}>
-                                {meal.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
+                        <th key={slot} className="px-3 py-3 text-left font-medium capitalize">
+                          {slot}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: Math.max(1, Number(durationDays) || 1) }, (_, dayIndex) => (
+                      <tr key={dayIndex} className="border-b border-[var(--color-border)] last:border-b-0">
+                        <td className="px-3 py-3 font-medium text-[var(--color-fg)]">Day {dayIndex + 1}</td>
+                        {PLANNER_SLOTS.map((slot) => (
+                          <CalendarDropCell key={`${dayIndex}-${slot}`} dayIndex={dayIndex} slot={slot}>
+                            <select
+                              value={getAssignmentMealId(dayIndex, slot)}
+                              onChange={(event) => updateAssignment(dayIndex, slot, Number(event.target.value))}
+                              className="field field-sm"
+                            >
+                              <option value="0">Select a meal</option>
+                              {meals.map((meal) => (
+                                <option key={meal.id} value={meal.id}>
+                                  {meal.name}
+                                </option>
+                              ))}
+                            </select>
+                          </CalendarDropCell>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-            <div className="flex items-center gap-3">
-              <button type="submit" disabled={creatingPlan} className="btn btn-primary">
-                {creatingPlan ? "Creating…" : "Save plan"}
-              </button>
-              {planFeedback ? <p className="text-sm text-[var(--color-fg-muted)]">{planFeedback}</p> : null}
-            </div>
-          </form>
-        </section>
+              <div className="flex items-center gap-3">
+                <button type="submit" disabled={creatingPlan} className="btn btn-primary">
+                  {creatingPlan ? "Creating…" : "Save plan"}
+                </button>
+                {planFeedback ? <p className="text-sm text-[var(--color-fg-muted)]">{planFeedback}</p> : null}
+              </div>
+            </form>
+          </section>
+
+          <DragOverlay>
+            {activeDragMealId ? (
+              <div className="surface-card px-3 py-2 shadow-[var(--shadow-modal)]">
+                {meals.find((m) => m.id === activeDragMealId)?.name}
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
 
         <section className="surface-card p-6">
           <h2 className="text-2xl">3. Review your complete time period</h2>

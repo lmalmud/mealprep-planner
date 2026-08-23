@@ -16,6 +16,12 @@ export async function searchIngredient(query: string): Promise<IngredientResolve
   );
 }
 
+export async function searchIngredientByUrl(url: string): Promise<IngredientResolveResult> {
+  return fetchFromApi<IngredientResolveResult>(
+    `/api/ingredients/resolve-url?url=${encodeURIComponent(url)}`
+  );
+}
+
 export async function createIngredient(payload: IngredientInput): Promise<Ingredient> {
   return postToApi<Ingredient>("/api/ingredients", payload);
 }

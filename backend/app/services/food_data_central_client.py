@@ -1,9 +1,17 @@
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from app.core.config import settings
+
+# api.data.gov's gateway (which fronts FoodData Central) can return a transient,
+# opaque 404 or 429 under throttling or while a newly-issued key is still
+# propagating — retrying briefly resolves most of these without user-visible errors.
+_RETRYABLE_STATUS_CODES = {404, 429}
+_MAX_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -21,6 +29,39 @@ class FoodDataCentralUnavailableError(RuntimeError):
 
 
 class FoodDataCentralClient:
+    def _get_with_retries(
+        self, client: httpx.Client, url: str, params: dict[str, Any]
+    ) -> httpx.Response:
+        last_response: httpx.Response | None = None
+        last_error: str | None = None
+
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                response = client.get(url, params=params)
+            except httpx.HTTPError as exc:
+                last_error = str(exc)
+            else:
+                if response.status_code < 400:
+                    return response
+                if response.status_code not in _RETRYABLE_STATUS_CODES:
+                    raise FoodDataCentralUnavailableError(
+                        f"FoodData Central lookup failed: "
+                        f"HTTP {response.status_code}: {response.text[:500]}"
+                    )
+                last_response = response
+
+            if attempt < _MAX_ATTEMPTS:
+                time.sleep(_RETRY_DELAY_SECONDS)
+
+        detail = (
+            f"HTTP {last_response.status_code}: {last_response.text[:500]}"
+            if last_response is not None
+            else last_error
+        )
+        raise FoodDataCentralUnavailableError(
+            f"FoodData Central lookup failed after {_MAX_ATTEMPTS} attempts: {detail}"
+        )
+
     def search(self, query: str) -> FoodDataIngredientCandidate | None:
         if not settings.food_data_central_api_key:
             raise FoodDataCentralUnavailableError(
@@ -35,8 +76,7 @@ class FoodDataCentralClient:
         }
 
         with httpx.Client(timeout=15.0) as client:
-            response = client.get(url, params=params)
-            response.raise_for_status()
+            response = self._get_with_retries(client, url, params)
 
         payload: dict[str, Any] = response.json()
         foods = payload.get("foods") or []

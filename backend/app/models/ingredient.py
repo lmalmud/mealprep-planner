@@ -16,12 +16,13 @@ class Ingredient(Base):
     fat_g: Mapped[float] = mapped_column(Float, nullable=False)
     price_amount: Mapped[float] = mapped_column(Float, nullable=False)
     price_currency: Mapped[str] = mapped_column(String(3), nullable=False)
-    price_unit: Mapped[str] = mapped_column(String(50), nullable=False)
+    serving_unit: Mapped[str] = mapped_column(String(50), nullable=False)
 
     def to_read(self) -> IngredientRead:
         return IngredientRead(
             id=self.id,
             name=self.name,
+            serving_unit=self.serving_unit,
             macros=IngredientMacros(
                 calories_kcal=self.calories_kcal,
                 protein_g=self.protein_g,
@@ -31,6 +32,5 @@ class Ingredient(Base):
             price=IngredientPrice(
                 amount=self.price_amount,
                 currency=self.price_currency,
-                unit=self.price_unit,
             ),
         )

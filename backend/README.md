@@ -17,4 +17,3 @@ FastAPI backend for MealPrep Planner.
 - `app/services/` business logic and orchestration
 - `app/database/` engine, sessions, and base model
 - `app/core/` settings and framework-level concerns
-- `app/utils/` focused shared utilities

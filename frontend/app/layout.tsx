@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
 import "../styles/globals.css";
 
@@ -18,6 +18,9 @@ const bodyFont = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "MealPrep Planner",
   description: "Meal planning, recipes, and grocery organization.",
+};
+
+export const viewport: Viewport = {
   themeColor: "#faf9f6",
 };
 

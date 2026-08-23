@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
                             fat_g=3.6,
                             price_amount=1.99,
                             price_currency="USD",
-                            price_unit="100g",
+                            serving_unit="100g",
                         ),
                         Ingredient(
                             name="Brown Rice",
@@ -50,7 +50,7 @@ def create_app() -> FastAPI:
                             fat_g=0.9,
                             price_amount=0.35,
                             price_currency="USD",
-                            price_unit="100g",
+                            serving_unit="100g",
                         ),
                         Ingredient(
                             name="Broccoli",
@@ -60,7 +60,7 @@ def create_app() -> FastAPI:
                             fat_g=0.4,
                             price_amount=0.79,
                             price_currency="USD",
-                            price_unit="100g",
+                            serving_unit="100g",
                         ),
                     ]
                 )
