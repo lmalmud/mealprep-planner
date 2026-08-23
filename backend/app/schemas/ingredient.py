@@ -13,6 +13,10 @@ class IngredientMacros(BaseModel):
 class IngredientPrice(BaseModel):
     amount: float = Field(ge=0)
     currency: str = Field(min_length=3, max_length=3)
+    # Set only when the price refers to a different quantity than `serving_unit`
+    # (e.g. macros are "per 15g serving" but the price is for a 480g package).
+    # None means the price is assumed to be for the same quantity as serving_unit.
+    unit: str | None = Field(default=None, min_length=1)
 
 
 class IngredientRead(BaseModel):
@@ -39,6 +43,7 @@ class IngredientUpdate(BaseModel):
     fat_g: float | None = Field(default=None, ge=0)
     price_amount: float | None = Field(default=None, ge=0)
     price_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    price_unit: str | None = Field(default=None, min_length=1)
 
 
 class IngredientResolveResult(BaseModel):

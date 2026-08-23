@@ -118,20 +118,30 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
     if existing is not None:
         return IngredientResolveResult(status="existing", ingredient=existing.to_read())
 
-    calories = protein = carbs = fat = 0.0
-    serving_unit = "100g"
-    try:
-        fdc_candidate = client.search(product.name)
-        if fdc_candidate is not None:
-            calories = fdc_candidate.calories_kcal
-            protein = fdc_candidate.protein_g
-            carbs = fdc_candidate.carbs_g
-            fat = fdc_candidate.fat_g
-            serving_unit = fdc_candidate.serving_unit
-    except FoodDataCentralUnavailableError:
-        # A URL-sourced candidate (name/price) is still useful even if macro
-        # lookup fails — the confirm dialog lets the user fill macros in by hand.
-        pass
+    calories, protein, carbs, fat = (
+        product.calories_kcal,
+        product.protein_g,
+        product.carbs_g,
+        product.fat_g,
+    )
+    serving_unit = product.serving_unit or "100g"
+
+    # Only fall back to a name-based FDC search if the page itself didn't
+    # already provide any nutrition facts (e.g. Target embeds a real facts
+    # panel; most retailers don't, and macros must come from FDC by name).
+    if calories is None and protein is None and carbs is None and fat is None:
+        try:
+            fdc_candidate = client.search(product.name)
+            if fdc_candidate is not None:
+                calories = fdc_candidate.calories_kcal
+                protein = fdc_candidate.protein_g
+                carbs = fdc_candidate.carbs_g
+                fat = fdc_candidate.fat_g
+                serving_unit = fdc_candidate.serving_unit
+        except FoodDataCentralUnavailableError:
+            # A URL-sourced candidate (name/price) is still useful even if macro
+            # lookup fails — the confirm dialog lets the user fill macros in by hand.
+            pass
 
     currency = (product.price_currency or "").strip().upper()
     if len(currency) != 3 or not currency.isalpha():
@@ -140,7 +150,12 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
     preview = IngredientCreate(
         name=product.name,
         serving_unit=serving_unit,
-        macros=IngredientMacros(calories_kcal=calories, protein_g=protein, carbs_g=carbs, fat_g=fat),
+        macros=IngredientMacros(
+            calories_kcal=calories or 0.0,
+            protein_g=protein or 0.0,
+            carbs_g=carbs or 0.0,
+            fat_g=fat or 0.0,
+        ),
         price=IngredientPrice(amount=product.price_amount or 0.0, currency=currency),
     )
     return IngredientResolveResult(status="preview", candidate=preview)
@@ -159,6 +174,7 @@ def create_ingredient(db: Session, payload: IngredientCreate) -> IngredientRead:
         fat_g=payload.macros.fat_g,
         price_amount=payload.price.amount,
         price_currency=payload.price.currency,
+        price_unit=payload.price.unit,
     )
     db.add(ingredient)
     db.commit()
@@ -193,6 +209,8 @@ def update_ingredient(db: Session, ingredient_id: int, payload: IngredientUpdate
         ingredient.price_amount = updates["price_amount"]
     if "price_currency" in updates:
         ingredient.price_currency = updates["price_currency"]
+    if "price_unit" in updates:
+        ingredient.price_unit = updates["price_unit"]
 
     db.add(ingredient)
     db.commit()

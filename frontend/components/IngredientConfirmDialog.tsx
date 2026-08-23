@@ -24,6 +24,8 @@ export default function IngredientConfirmDialog({
   const [fat, setFat] = useState(String(candidate.macros.fat_g));
   const [priceAmount, setPriceAmount] = useState(String(candidate.price.amount));
   const [priceCurrency, setPriceCurrency] = useState(candidate.price.currency);
+  const [priceHasOwnUnit, setPriceHasOwnUnit] = useState(Boolean(candidate.price.unit));
+  const [priceUnit, setPriceUnit] = useState(candidate.price.unit ?? "");
 
   function handleConfirm() {
     onConfirm({
@@ -38,6 +40,7 @@ export default function IngredientConfirmDialog({
       price: {
         amount: Number(priceAmount) || 0,
         currency: priceCurrency.trim() || "USD",
+        unit: priceHasOwnUnit && priceUnit.trim() ? priceUnit.trim() : null,
       },
     });
   }
@@ -141,6 +144,29 @@ export default function IngredientConfirmDialog({
                 className="field mt-1 uppercase"
               />
             </label>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-[var(--color-fg-muted)]">
+              <input
+                type="checkbox"
+                checked={priceHasOwnUnit}
+                onChange={(event) => setPriceHasOwnUnit(event.target.checked)}
+              />
+              Price is for a different amount than the serving unit above
+            </label>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--color-fg-faint)]">
+              Common with URL-sourced prices — e.g. macros are per 15g serving, but the price is for
+              the whole 480g package.
+            </p>
+            {priceHasOwnUnit ? (
+              <input
+                value={priceUnit}
+                onChange={(event) => setPriceUnit(event.target.value)}
+                className="field mt-2"
+                placeholder="e.g. 480g or 1 package"
+              />
+            ) : null}
           </div>
         </div>
 

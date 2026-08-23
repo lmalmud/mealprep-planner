@@ -17,6 +17,7 @@ type EditDraft = {
   fat_g: string;
   price_amount: string;
   price_currency: string;
+  price_unit: string;
 };
 
 function toDraft(ingredient: Ingredient): EditDraft {
@@ -29,6 +30,7 @@ function toDraft(ingredient: Ingredient): EditDraft {
     fat_g: String(ingredient.macros.fat_g),
     price_amount: String(ingredient.price.amount),
     price_currency: ingredient.price.currency,
+    price_unit: ingredient.price.unit ?? "",
   };
 }
 
@@ -87,6 +89,7 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
       fat_g: Number(editDraft.fat_g) || 0,
       price_amount: Number(editDraft.price_amount) || 0,
       price_currency: editDraft.price_currency.trim() || "USD",
+      price_unit: editDraft.price_unit.trim() || null,
     };
 
     try {
@@ -205,18 +208,26 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-1">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              value={editDraft.price_amount}
+                              onChange={(event) => setEditDraft({ ...editDraft, price_amount: event.target.value })}
+                              className="field field-sm w-16"
+                            />
+                            <input
+                              value={editDraft.price_currency}
+                              onChange={(event) => setEditDraft({ ...editDraft, price_currency: event.target.value })}
+                              maxLength={3}
+                              className="field field-sm w-12 uppercase"
+                            />
+                          </div>
                           <input
-                            type="number"
-                            value={editDraft.price_amount}
-                            onChange={(event) => setEditDraft({ ...editDraft, price_amount: event.target.value })}
-                            className="field field-sm w-16"
-                          />
-                          <input
-                            value={editDraft.price_currency}
-                            onChange={(event) => setEditDraft({ ...editDraft, price_currency: event.target.value })}
-                            maxLength={3}
-                            className="field field-sm w-12 uppercase"
+                            value={editDraft.price_unit}
+                            onChange={(event) => setEditDraft({ ...editDraft, price_unit: event.target.value })}
+                            className="field field-sm w-32"
+                            placeholder="per (if different)"
                           />
                         </div>
                       </td>
@@ -256,6 +267,9 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                       <td className="px-4 py-3 text-[var(--color-fg-faint)]">per {ingredient.serving_unit}</td>
                       <td className="px-4 py-3">
                         {ingredient.price.currency} {ingredient.price.amount.toFixed(2)}
+                        {ingredient.price.unit ? (
+                          <span className="text-[var(--color-fg-faint)]"> / {ingredient.price.unit}</span>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">

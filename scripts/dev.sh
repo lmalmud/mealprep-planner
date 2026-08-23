@@ -119,7 +119,11 @@ cmd_start() {
     log "Backend already running on port $BACKEND_PORT, leaving it as-is"
   else
     log "Starting backend on port $BACKEND_PORT (log: $BACKEND_LOG)"
-    (cd "$ROOT_DIR" && nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app --reload --app-dir backend \
+    # Must run with CWD = backend/, not repo root: DATABASE_URL in backend/.env
+    # is a relative sqlite path ("./mealprep.db") resolved against the
+    # process's working directory, so running from the wrong directory
+    # silently creates/uses a second, divergent database file.
+    (cd "$BACKEND_DIR" && nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app --reload \
       >"$BACKEND_LOG" 2>&1 &)
   fi
 

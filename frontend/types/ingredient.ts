@@ -8,6 +8,9 @@ export type IngredientMacros = {
 export type IngredientPrice = {
   amount: number;
   currency: string;
+  // Set only when the price is for a different quantity than `serving_unit`
+  // (e.g. macros are per 15g serving but the price is for a 480g package).
+  unit?: string | null;
 };
 
 export type Ingredient = {
@@ -34,6 +37,7 @@ export type IngredientUpdateInput = Partial<{
   fat_g: number;
   price_amount: number;
   price_currency: string;
+  price_unit: string | null;
 }>;
 
 export type IngredientResolveResult =

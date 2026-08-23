@@ -83,17 +83,26 @@ export default function PlannerPage() {
   }, []);
 
   function computeMealTotals(meal: Meal) {
-    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, price: 0 };
+    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, price: 0, priceIncomplete: false };
     for (const item of meal.ingredients) {
       const ing = ingredients.find((i) => i.id === item.ingredient_id);
       if (!ing) continue;
-      // assume ingredient macros and price are both per 100g of serving_unit; compute factor
+      // assume ingredient macros are per 100g of serving_unit; compute factor
       const factor = (Number(item.quantity_amount) || 0) / 100;
       totals.calories += (ing.macros.calories_kcal || 0) * factor;
       totals.protein += (ing.macros.protein_g || 0) * factor;
       totals.carbs += (ing.macros.carbs_g || 0) * factor;
       totals.fat += (ing.macros.fat_g || 0) * factor;
-      totals.price += (ing.price.amount || 0) * factor;
+
+      // If the price is explicitly for a different quantity than serving_unit
+      // (e.g. a whole package vs. a per-serving macro basis), scaling it by
+      // the same factor as macros would be misleading — skip it and flag the
+      // total as incomplete rather than showing a fabricated number.
+      if (ing.price.unit && ing.price.unit !== ing.serving_unit) {
+        totals.priceIncomplete = true;
+      } else {
+        totals.price += (ing.price.amount || 0) * factor;
+      }
     }
     return totals;
   }
@@ -193,7 +202,13 @@ export default function PlannerPage() {
         </span>
         <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
           Price: {ingredients[0]?.price.currency ?? "USD"} {totals.price.toFixed(2)}
+          {totals.priceIncomplete ? "+" : ""}
         </span>
+        {totals.priceIncomplete ? (
+          <span className="text-xs text-[var(--color-fg-faint)]">
+            Some ingredients are priced per a different unit and aren&rsquo;t included above.
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -268,7 +283,7 @@ export default function PlannerPage() {
   }
 
   function computePlanTotals(plan: MealPlan | null) {
-    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, price: 0 };
+    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, price: 0, priceIncomplete: false };
     if (!plan) return totals;
     for (const assignment of plan.assignments) {
       const meal = meals.find((m) => m.id === assignment.meal_id);
@@ -279,6 +294,7 @@ export default function PlannerPage() {
       totals.carbs += t.carbs;
       totals.fat += t.fat;
       totals.price += t.price;
+      totals.priceIncomplete = totals.priceIncomplete || t.priceIncomplete;
     }
     return totals;
   }
@@ -551,7 +567,13 @@ export default function PlannerPage() {
                       </span>
                       <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1 text-sm">
                         Estimated Cost: {ingredients[0]?.price.currency ?? "USD"} {pt.price.toFixed(2)}
+                        {pt.priceIncomplete ? "+" : ""}
                       </span>
+                      {pt.priceIncomplete ? (
+                        <span className="flex items-center text-xs text-[var(--color-fg-faint)]">
+                          Some ingredients are priced per a different unit and aren&rsquo;t included above.
+                        </span>
+                      ) : null}
                     </>
                   );
                 })()}

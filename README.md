@@ -18,7 +18,8 @@ The project is now beyond a simple scaffold. The current implementation includes
 - A custom design system (CSS variables for color/type/radius/shadow tokens, `Fraunces` + `Plus Jakarta Sans` via `next/font`, fluid `clamp()` type scale) applied across the home and planner pages
 - A one-command dev script (`./scripts/dev.sh`) that starts and stops both the backend and frontend together
 - A drag-and-drop weekly meal-plan calendar (`@dnd-kit`) — drag a saved meal onto a day/slot cell, or use the dropdown as a keyboard/accessible alternative
-- A "paste a product link" option alongside name search, for branded items: it extracts whatever name/price/image a site's structured product data provides (best-effort, most reliable on sites that publish schema.org/Open Graph product data), then still runs a FoodData Central search for macros — all funneled through the same confirm-before-save review step
+- A "paste a product link" option alongside name search, for branded items: it extracts whatever name/price/image a site's structured product data provides (best-effort, most reliable on sites that publish schema.org/Open Graph product data), and also checks for an embedded nutrition-facts panel (e.g. Target's product pages) before falling back to a FoodData Central name search for macros — all funneled through the same confirm-before-save review step
+- An optional, separate price unit: when a price is for a different quantity than the macro serving size (common with URL-sourced prices, e.g. a whole package vs. a per-serving macro basis), it can be recorded explicitly instead of being silently misrepresented — the ingredients table and planner cost estimates reflect this honestly rather than computing a misleading number
 
 ## Architecture at a glance
 
@@ -41,7 +42,7 @@ The backend currently exposes:
 - `GET /api/health` - simple health check
 - `GET /api/ingredients` - list persisted ingredients
 - `GET /api/ingredients/resolve?query=<name>` - look up a food by name
-- `GET /api/ingredients/resolve-url?url=<product-url>` - extract a product's name/price from a URL, then search for macros by that name (same preview/confirm flow as name resolve)
+- `GET /api/ingredients/resolve-url?url=<product-url>` - extract a product's name/price/macros from a URL where available, falling back to a FoodData Central name search for any macros the page doesn't provide (same preview/confirm flow as name resolve)
 - `POST /api/ingredients` - create a new ingredient
 - `PATCH /api/ingredients/{id}` - update an existing ingredient
 - `DELETE /api/ingredients/{id}` - delete an ingredient (409 if it's still used in a meal)
@@ -165,7 +166,7 @@ The next milestones should focus on turning this into a fuller meal-planning pro
 5. Consider moving from SQLite to PostgreSQL as the domain grows
 6. Rename the project (in progress — the current name is a placeholder pending a final pick)
 
-**Known limitation:** the `resolve-url` product-link extraction is intentionally general-purpose and best-effort — it relies on a site publishing schema.org/Open Graph structured data, which many independent retailers do but Amazon does not reliably expose to non-browser requests (their Terms of Service also prohibit automated scraping, so this project doesn't target them specifically). Nutrition facts are never available from e-commerce structured data on any retailer, so macros always come from a separate FoodData Central name search — expect the confirm dialog to sometimes need manual correction.
+**Known limitation:** the `resolve-url` product-link extraction is intentionally general-purpose and best-effort — it relies on a site publishing schema.org/Open Graph structured data, or embedding a real nutrition-facts panel in its page data (as some retailers, e.g. Target, do), which Amazon does not reliably expose to non-browser requests (their Terms of Service also prohibit automated scraping, so this project doesn't target them specifically). When a site doesn't expose either, macros fall back to a FoodData Central name search and price stays at $0 — expect the confirm dialog to sometimes need manual correction, and note that a price found on the page may refer to a different quantity than the macros (e.g. a whole package vs. a single serving) — the confirm dialog lets you record the price's own unit separately when that's the case.
 
 ## Verification notes
 
