@@ -1,0 +1,53 @@
+export type MealIngredientInput = {
+  ingredient_id: number;
+  quantity_amount: number;
+  quantity_unit: string;
+};
+
+export type MealIngredient = {
+  ingredient_id: number;
+  ingredient_name: string;
+  quantity_amount: number;
+  quantity_unit: string;
+};
+
+export type Meal = {
+  id: number;
+  name: string;
+  description: string;
+  ingredients: MealIngredient[];
+};
+
+export type MealCreatePayload = {
+  name: string;
+  description: string;
+  ingredients: MealIngredientInput[];
+};
+
+export type MealPlanAssignment = {
+  day_index: number;
+  slot: string;
+  meal_id: number;
+  meal_name: string;
+};
+
+export type MealPlan = {
+  id: number;
+  name: string;
+  start_date: string;
+  duration_days: number;
+  assignments: MealPlanAssignment[];
+};
+
+export type MealPlanAssignmentPayload = {
+  day_index: number;
+  slot: string;
+  meal_id: number;
+};
+
+export type MealPlanCreatePayload = {
+  name: string;
+  start_date: string;
+  duration_days: number;
+  assignments: MealPlanAssignmentPayload[];
+};

@@ -1,3 +1,196 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/*
+ * Design tokens. Tailwind v4 compiles @theme entries to real :root custom
+ * properties, so these are both the source of truth for the palette/type
+ * scale AND automatically available as Tailwind utilities (bg-accent,
+ * font-display, rounded-lg, shadow-card, ease-premium, ...).
+ */
+@theme {
+  --color-bg: #faf9f6;
+  --color-bg-elevated: #ffffff;
+  --color-bg-subtle: #f2efe8;
+  --color-fg: #0d0e12;
+  --color-fg-muted: #55565c;
+  --color-fg-faint: #8a8b91;
+  --color-border: rgba(13, 14, 18, 0.1);
+  --color-border-strong: rgba(13, 14, 18, 0.18);
+  --color-accent: #a8461f;
+  --color-accent-hover: #8a3818;
+  --color-accent-soft: rgba(168, 70, 31, 0.08);
+  --color-danger: #a3271d;
+  --color-danger-soft: rgba(163, 39, 29, 0.08);
+  --color-danger-border: rgba(163, 39, 29, 0.28);
+  --color-warning: #8a5a12;
+  --color-warning-soft: rgba(180, 130, 20, 0.1);
+  --color-warning-border: rgba(180, 130, 20, 0.32);
+
+  --font-display: var(--nf-display), "Iowan Old Style", Georgia, serif;
+  --font-body: var(--nf-body), system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --text-2xl: clamp(1.375rem, 1.1rem + 1.1vw, 1.75rem);
+  --text-3xl: clamp(1.75rem, 1.3rem + 1.8vw, 2.25rem);
+  --text-4xl: clamp(2.1rem, 1.5rem + 2.6vw, 3rem);
+  --text-5xl: clamp(2.5rem, 1.7rem + 3.4vw, 3.75rem);
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+
+  --shadow-card: 0 1px 2px rgba(13, 14, 18, 0.04), 0 18px 36px -22px rgba(13, 14, 18, 0.16);
+  --shadow-modal: 0 30px 80px -20px rgba(13, 14, 18, 0.4);
+
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-body);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 1.1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.4s var(--ease-premium);
+    white-space: nowrap;
+  }
+
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--color-fg);
+    color: var(--color-bg);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-accent);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border-color: var(--color-border-strong);
+    color: var(--color-fg);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-bg-subtle);
+    border-color: var(--color-fg);
+  }
+
+  .btn-danger {
+    background: transparent;
+    border-color: var(--color-danger-border);
+    color: var(--color-danger);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: var(--color-danger-soft);
+  }
+
+  .btn-danger-solid {
+    background: var(--color-danger);
+    color: var(--color-bg);
+  }
+  .btn-danger-solid:hover:not(:disabled) {
+    background: #872018;
+  }
+
+  .btn-sm {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.75rem;
+  }
+
+  .field {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-bg-elevated);
+    color: var(--color-fg);
+    padding: 0.55rem 0.75rem;
+    font-size: 0.875rem;
+    transition: border-color 0.3s var(--ease-premium), box-shadow 0.3s var(--ease-premium);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+  }
+  .field-sm {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.8125rem;
+  }
+
+  .surface-card {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+  }
+
+  .surface-panel {
+    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 14, 18, 0.45);
+    backdrop-filter: blur(6px);
+    padding: 1rem;
+  }
+
+  .modal-panel {
+    background: var(--color-bg-elevated);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-modal);
+  }
+
+  .link-subtle {
+    color: var(--color-fg-muted);
+    transition: color 0.3s var(--ease-premium);
+  }
+  .link-subtle:hover {
+    color: var(--color-fg);
+  }
+}
