@@ -13,11 +13,26 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { fetchIngredients } from "@/services/ingredients";
-import { createMeal, createMealPlan, fetchMeals } from "@/services/planner";
+import {
+  createMeal,
+  createMealPlan,
+  deleteMealPlan,
+  fetchGroceryList,
+  fetchMeals,
+  fetchMealPlans,
+  updateMealPlan,
+} from "@/services/planner";
 import { useIngredientSearch } from "@/hooks/useIngredientSearch";
 import { computeMealTotals } from "@/lib/mealTotals";
 import type { Ingredient } from "@/types/ingredient";
-import type { Meal, MealCreatePayload, MealPlan, MealPlanAssignmentPayload, MealPlanCreatePayload } from "@/types/meal";
+import type {
+  GroceryListItem,
+  Meal,
+  MealCreatePayload,
+  MealPlan,
+  MealPlanAssignmentPayload,
+  MealPlanCreatePayload,
+} from "@/types/meal";
 import NavBar from "@/components/NavBar";
 import IngredientConfirmDialog from "@/components/IngredientConfirmDialog";
 import IngredientQuickAddPanel from "@/components/IngredientQuickAddPanel";
@@ -27,8 +42,27 @@ import MealIngredientsEditor, {
 } from "@/components/MealIngredientsEditor";
 import DraggableMealCard from "@/components/DraggableMealCard";
 import CalendarDropCell from "@/components/CalendarDropCell";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import GroceryListView from "@/components/GroceryListView";
 
 const PLANNER_SLOTS = ["breakfast", "lunch", "dinner", "snack"];
+
+// Builds a full day×slot grid (every combination present, even when
+// unassigned) so `updateAssignment`'s .map()-based update always finds a
+// matching entry to update — a sparse array would silently no-op for any
+// cell that wasn't already in it.
+function buildAssignmentGrid(
+  days: number,
+  existing: { day_index: number; slot: string; meal_id: number }[] = []
+): MealPlanAssignmentPayload[] {
+  return Array.from({ length: Math.max(1, days) }, (_, dayIndex) =>
+    PLANNER_SLOTS.map((slot) => ({
+      day_index: dayIndex,
+      slot,
+      meal_id: existing.find((a) => a.day_index === dayIndex && a.slot === slot)?.meal_id ?? 0,
+    }))
+  ).flat();
+}
 
 export default function PlannerPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -77,12 +111,26 @@ export default function PlannerPage() {
   const [planFeedback, setPlanFeedback] = useState("");
   const [createdPlan, setCreatedPlan] = useState<MealPlan | null>(null);
 
+  const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
+  const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
+  const [deletePlanTargetId, setDeletePlanTargetId] = useState<number | null>(null);
+  const [deletingPlan, setDeletingPlan] = useState(false);
+  const [deletePlanError, setDeletePlanError] = useState("");
+  const [groceryListItems, setGroceryListItems] = useState<GroceryListItem[] | null>(null);
+  const [groceryListPlanName, setGroceryListPlanName] = useState("");
+  const [loadingGroceryList, setLoadingGroceryList] = useState<number | null>(null);
+
   useEffect(() => {
     async function loadData() {
       try {
-        const [ingredientData, mealData] = await Promise.all([fetchIngredients(), fetchMeals()]);
+        const [ingredientData, mealData, planData] = await Promise.all([
+          fetchIngredients(),
+          fetchMeals(),
+          fetchMealPlans(),
+        ]);
         setIngredients(ingredientData);
         setMeals(mealData);
+        setMealPlans(planData);
       } catch {
         setMealFeedback("Unable to load ingredients and meals right now.");
       }
@@ -92,21 +140,7 @@ export default function PlannerPage() {
   }, []);
 
   useEffect(() => {
-    const nextAssignments = Array.from({ length: Math.max(1, Number(durationDays) || 1) }, (_, dayIndex) =>
-      PLANNER_SLOTS.map((slot) => ({
-        day_index: dayIndex,
-        slot,
-        meal_id: 0,
-      }))
-    ).flat();
-
-    setAssignments((previous) => {
-      const existingByKey = new Map(previous.map((item) => [`${item.day_index}:${item.slot}`, item.meal_id]));
-      return nextAssignments.map((assignment) => {
-        const previousMealId = existingByKey.get(`${assignment.day_index}:${assignment.slot}`);
-        return previousMealId ? { ...assignment, meal_id: previousMealId } : assignment;
-      });
-    });
+    setAssignments((previous) => buildAssignmentGrid(Number(durationDays) || 1, previous));
   }, [durationDays]);
 
   function requestAddIngredientForRow(index: number, query: string) {
@@ -212,13 +246,73 @@ export default function PlannerPage() {
 
     try {
       setCreatingPlan(true);
-      const createdPlan = await createMealPlan(payload);
-      setCreatedPlan(createdPlan);
-      setPlanFeedback(`Created plan “${createdPlan.name}”.`);
+      const savedPlan = editingPlanId
+        ? await updateMealPlan(editingPlanId, payload)
+        : await createMealPlan(payload);
+      setCreatedPlan(savedPlan);
+      setMealPlans((previous) => {
+        const exists = previous.some((plan) => plan.id === savedPlan.id);
+        return exists
+          ? previous.map((plan) => (plan.id === savedPlan.id ? savedPlan : plan))
+          : [savedPlan, ...previous];
+      });
+      setPlanFeedback(editingPlanId ? `Updated plan “${savedPlan.name}”.` : `Created plan “${savedPlan.name}”.`);
     } catch (error) {
-      setPlanFeedback(error instanceof Error ? error.message : "Unable to create the meal plan.");
+      setPlanFeedback(error instanceof Error ? error.message : "Unable to save the meal plan.");
     } finally {
       setCreatingPlan(false);
+    }
+  }
+
+  function loadPlanForEditing(plan: MealPlan) {
+    setEditingPlanId(plan.id);
+    setPlanName(plan.name);
+    setStartDate(plan.start_date);
+    setDurationDays(plan.duration_days);
+    setAssignments(buildAssignmentGrid(plan.duration_days, plan.assignments));
+    setCreatedPlan(plan);
+    setPlanFeedback(`Editing “${plan.name}” — change the calendar below, then save.`);
+  }
+
+  function startNewPlan() {
+    setEditingPlanId(null);
+    setPlanName("My 7-Day Plan");
+    setStartDate(new Date().toISOString().slice(0, 10));
+    setDurationDays(7);
+    setAssignments(buildAssignmentGrid(7));
+    setCreatedPlan(null);
+    setPlanFeedback("");
+  }
+
+  async function confirmDeletePlan() {
+    if (deletePlanTargetId === null) return;
+    setDeletePlanError("");
+
+    try {
+      setDeletingPlan(true);
+      await deleteMealPlan(deletePlanTargetId);
+      setMealPlans((previous) => previous.filter((plan) => plan.id !== deletePlanTargetId));
+      if (editingPlanId === deletePlanTargetId) {
+        startNewPlan();
+      }
+      setDeletePlanTargetId(null);
+    } catch (error) {
+      setDeletePlanError(error instanceof Error ? error.message : "Unable to delete this plan.");
+    } finally {
+      setDeletingPlan(false);
+    }
+  }
+
+  async function showGroceryList(plan: MealPlan) {
+    setLoadingGroceryList(plan.id);
+    try {
+      const items = await fetchGroceryList(plan.id);
+      setGroceryListItems(items);
+      setGroceryListPlanName(plan.name);
+    } catch (error) {
+      setPlanFeedback(error instanceof Error ? error.message : "Unable to build the grocery list.");
+    } finally {
+      setLoadingGroceryList(null);
     }
   }
 
@@ -331,6 +425,60 @@ export default function PlannerPage() {
           </form>
         </section>
 
+        <section className="surface-card p-6">
+          <h2 className="text-2xl">Your saved plans</h2>
+          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
+            Load a saved plan to keep editing it, or generate a grocery list for it.
+          </p>
+          <div className="mt-4 grid gap-3">
+            {mealPlans.length ? (
+              mealPlans.map((plan) => (
+                <div
+                  key={plan.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4"
+                >
+                  <div>
+                    <div className="font-medium text-[var(--color-fg)]">
+                      {plan.name}
+                      {editingPlanId === plan.id ? (
+                        <span className="ml-2 text-xs font-normal text-[var(--color-accent)]">editing</span>
+                      ) : null}
+                    </div>
+                    <div className="text-sm text-[var(--color-fg-muted)]">
+                      Starts {plan.start_date} · {plan.duration_days} day(s) · {plan.assignments.length} meal(s) assigned
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => loadPlanForEditing(plan)} className="btn btn-secondary btn-sm">
+                      Load to edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => showGroceryList(plan)}
+                      disabled={loadingGroceryList === plan.id}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      {loadingGroceryList === plan.id ? "Loading…" : "Grocery list"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletePlanError("");
+                        setDeletePlanTargetId(plan.id);
+                      }}
+                      className="btn btn-danger btn-sm"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-[var(--color-fg-faint)]">No saved plans yet — create one below.</div>
+            )}
+          </div>
+        </section>
+
         <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <section className="surface-card p-6">
             <h3 className="text-xl">Saved meals</h3>
@@ -358,11 +506,16 @@ export default function PlannerPage() {
           <section className="surface-card p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl">2. Create a time period plan</h2>
+                <h2 className="text-2xl">2. {editingPlanId ? "Edit your plan" : "Create a time period plan"}</h2>
                 <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
                   Choose how many days you want to plan for and assign meals to each day and slot.
                 </p>
               </div>
+              {editingPlanId ? (
+                <button type="button" onClick={startNewPlan} className="btn btn-secondary btn-sm">
+                  Start a new plan instead
+                </button>
+              ) : null}
             </div>
 
             <form className="mt-6 space-y-5" onSubmit={handleCreatePlan}>
@@ -458,7 +611,7 @@ export default function PlannerPage() {
 
               <div className="flex items-center gap-3">
                 <button type="submit" disabled={creatingPlan} className="btn btn-primary">
-                  {creatingPlan ? "Creating…" : "Save plan"}
+                  {creatingPlan ? "Saving…" : editingPlanId ? "Update plan" : "Save plan"}
                 </button>
                 {planFeedback ? <p className="text-sm text-[var(--color-fg-muted)]">{planFeedback}</p> : null}
               </div>
@@ -559,6 +712,31 @@ export default function PlannerPage() {
           busy={creatingIngredient}
           onConfirm={confirmCandidate}
           onCancel={cancelCandidate}
+        />
+      ) : null}
+
+      {deletePlanTargetId !== null ? (
+        <ConfirmDialog
+          title="Delete plan?"
+          message={
+            deletePlanError ||
+            `This will permanently remove "${mealPlans.find((plan) => plan.id === deletePlanTargetId)?.name ?? "this plan"}".`
+          }
+          confirmLabel="Delete"
+          busy={deletingPlan}
+          onConfirm={confirmDeletePlan}
+          onCancel={() => {
+            setDeletePlanTargetId(null);
+            setDeletePlanError("");
+          }}
+        />
+      ) : null}
+
+      {groceryListItems ? (
+        <GroceryListView
+          planName={groceryListPlanName}
+          items={groceryListItems}
+          onClose={() => setGroceryListItems(null)}
         />
       ) : null}
     </div>

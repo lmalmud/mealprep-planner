@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { updateMeal } from "@/services/planner";
+import { deleteMeal, getMealUsage, updateMeal } from "@/services/planner";
 import { useIngredientSearch } from "@/hooks/useIngredientSearch";
 import { computeMealTotals } from "@/lib/mealTotals";
 import MealIngredientsEditor, {
@@ -9,6 +9,7 @@ import MealIngredientsEditor, {
   type MealIngredientDraft,
 } from "@/components/MealIngredientsEditor";
 import IngredientConfirmDialog from "@/components/IngredientConfirmDialog";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import type { Ingredient } from "@/types/ingredient";
 import type { Meal } from "@/types/meal";
 
@@ -46,6 +47,11 @@ export default function MealManager({
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
   const [addingForRowIndex, setAddingForRowIndex] = useState<number | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const [deleteAffectedPlans, setDeleteAffectedPlans] = useState<string[]>([]);
+  const [checkingUsage, setCheckingUsage] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const { pendingCandidate, creating, search, confirmCandidate, cancelCandidate } = useIngredientSearch({
     onAdded: (ingredient) => {
@@ -121,6 +127,38 @@ export default function MealManager({
     void search(query);
   }
 
+  async function startDelete(mealId: number) {
+    setDeleteError("");
+    setDeleteAffectedPlans([]);
+    setDeleteTargetId(mealId);
+    try {
+      setCheckingUsage(true);
+      const planNames = await getMealUsage(mealId);
+      setDeleteAffectedPlans(planNames);
+    } catch {
+      // If the usage check fails, proceed without the extra warning — delete
+      // itself will still succeed (or report a real error) either way.
+    } finally {
+      setCheckingUsage(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (deleteTargetId === null) return;
+    setDeleteError("");
+
+    try {
+      setDeleting(true);
+      await deleteMeal(deleteTargetId);
+      setMeals((previous) => previous.filter((meal) => meal.id !== deleteTargetId));
+      setDeleteTargetId(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Unable to delete this meal.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function renderMealSummary(meal: Meal) {
     const totals = computeMealTotals(meal, ingredients);
     return (
@@ -144,6 +182,8 @@ export default function MealManager({
       </div>
     );
   }
+
+  const deleteTarget = meals.find((meal) => meal.id === deleteTargetId) ?? null;
 
   return (
     <section className="pt-10">
@@ -229,9 +269,14 @@ export default function MealManager({
                       </ul>
                       {renderMealSummary(meal)}
                     </div>
-                    <button type="button" onClick={() => startEdit(meal)} className="btn btn-secondary btn-sm">
-                      Edit
-                    </button>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => startEdit(meal)} className="btn btn-secondary btn-sm">
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => startDelete(meal.id)} className="btn btn-danger btn-sm">
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -250,6 +295,28 @@ export default function MealManager({
           busy={creating}
           onConfirm={confirmCandidate}
           onCancel={cancelCandidate}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDialog
+          title="Delete meal?"
+          message={
+            deleteError ||
+            (checkingUsage
+              ? "Checking whether this meal is used in any saved plans…"
+              : deleteAffectedPlans.length
+                ? `"${deleteTarget.name}" is used in ${deleteAffectedPlans.length} saved plan(s): ${deleteAffectedPlans.join(", ")}. Deleting it will remove it from ${deleteAffectedPlans.length === 1 ? "that plan" : "those plans"}.`
+                : `This will permanently remove "${deleteTarget.name}" from your saved meals.`)
+          }
+          confirmLabel="Delete"
+          busy={deleting || checkingUsage}
+          onConfirm={confirmDelete}
+          onCancel={() => {
+            setDeleteTargetId(null);
+            setDeleteError("");
+            setDeleteAffectedPlans([]);
+          }}
         />
       ) : null}
     </section>

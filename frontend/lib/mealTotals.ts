@@ -1,3 +1,4 @@
+import { gramsForQuantity } from "@/lib/units";
 import type { Ingredient } from "@/types/ingredient";
 import type { Meal } from "@/types/meal";
 
@@ -17,27 +18,27 @@ export function computeMealTotals(meal: Meal, ingredients: Ingredient[]): MealTo
     const ing = ingredients.find((i) => i.id === item.ingredient_id);
     if (!ing) continue;
 
-    // assume ingredient macros are per 100g of serving_unit; compute factor
-    const factor = (Number(item.quantity_amount) || 0) / 100;
-    totals.calories += (ing.macros.calories_kcal || 0) * factor;
-    totals.protein += (ing.macros.protein_g || 0) * factor;
-    totals.carbs += (ing.macros.carbs_g || 0) * factor;
-    totals.fat += (ing.macros.fat_g || 0) * factor;
+    const defaultServing = ing.servings.find((s) => s.id === ing.default_serving_id);
+    const grams = gramsForQuantity(item.quantity_amount, item.quantity_unit, ing.servings);
 
-    if (ing.price.unit && ing.price.unit !== ing.serving_unit) {
-      if (ing.price.servings_per_container && ing.price.servings_per_container > 0) {
-        // Known conversion: price / servings gives an exact per-serving-unit
-        // price, so it can be scaled by the same factor as macros.
-        const pricePerServingUnit = ing.price.amount / ing.price.servings_per_container;
-        totals.price += pricePerServingUnit * factor;
-      } else {
-        // Price is for an unknown-sized different quantity — scaling it by
-        // the same factor as macros would be misleading. Skip it and flag
-        // the total as incomplete rather than showing a fabricated number.
-        totals.priceIncomplete = true;
-      }
+    // Macros are stored "per default serving" — converting to the meal's
+    // quantity requires knowing both the quantity's grams and the default
+    // serving's grams. When either is unknown, skip macros for this
+    // ingredient rather than computing a meaningless number.
+    if (grams !== null && defaultServing?.grams) {
+      const factor = grams / defaultServing.grams;
+      totals.calories += (ing.macros.calories_kcal || 0) * factor;
+      totals.protein += (ing.macros.protein_g || 0) * factor;
+      totals.carbs += (ing.macros.carbs_g || 0) * factor;
+      totals.fat += (ing.macros.fat_g || 0) * factor;
+    }
+
+    const priceServing = ing.servings.find((s) => s.id === ing.price.serving_id) ?? defaultServing;
+    if (grams !== null && priceServing?.grams) {
+      const pricePerGram = ing.price.amount / priceServing.grams;
+      totals.price += pricePerGram * grams;
     } else {
-      totals.price += (ing.price.amount || 0) * factor;
+      totals.priceIncomplete = true;
     }
   }
 

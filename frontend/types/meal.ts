@@ -57,3 +57,21 @@ export type MealPlanCreatePayload = {
   duration_days: number;
   assignments: MealPlanAssignmentPayload[];
 };
+
+export type MealPlanUpdatePayload = Partial<{
+  name: string;
+  start_date: string;
+  duration_days: number;
+  assignments: MealPlanAssignmentPayload[];
+}>;
+
+export type GroceryListItem = {
+  ingredient_id: number;
+  ingredient_name: string;
+  total_amount: number;
+  total_unit: string;
+  containers_needed: number | null;
+  estimated_cost: number | null;
+  currency: string | null;
+  note: string | null;
+};

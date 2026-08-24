@@ -12,22 +12,24 @@ The project is now beyond a simple scaffold. The current implementation includes
 - A seeded ingredient data model with starter rows created on startup and via Alembic
 - Full ingredient CRUD: list, search/resolve, create, edit, and delete — deleting an ingredient that's used in one or more meals also deletes those meals (and their calendar assignments); the confirm dialog checks and names the affected meals first
 - A confirm-before-save flow: searching for an ingredient not already in the database returns a non-persisted preview so you can review and edit the values — especially price, which external lookups don't provide — before it's saved
-- A shared `serving_unit` field (e.g. `"100g"`) that describes the basis for both the macro values and the price, shown in the ingredients table so it's clear what quantity the numbers refer to
+- A Cronometer-style multi-serving unit system: each ingredient carries a list of named servings (e.g. `"154g"`, `"1 medium apple"`, `"6 pack"`), each with its own gram equivalent. One serving is marked as the macro basis (what the calorie/protein/carb/fat numbers are "per"), and one is marked as the price basis (what the price refers to) — they don't have to be the same serving. Mass-unit labels (g/kg/mg/oz/lb, in either short or spelled-out form) have their gram equivalent filled in automatically; other units (a count like "1 apple", a volume like "1 cup") need a gram value entered by hand, since there's no density table to derive one — until it's supplied, that serving simply can't be converted to/from the others, which is shown honestly rather than guessed at
 - Optional external ingredient lookup via the USDA FoodData Central API when an API key is configured, with automatic retries for the transient errors that gateway is known to return
 - A typed frontend service layer that calls the backend and renders ingredient data on the home page
 - A custom design system (CSS variables for color/type/radius/shadow tokens, `Fraunces` + `Plus Jakarta Sans` via `next/font`, fluid `clamp()` type scale) applied across the home and planner pages
 - A one-command dev script (`./scripts/dev.sh`) that starts and stops both the backend and frontend together
 - A drag-and-drop weekly meal-plan calendar (`@dnd-kit`) — drag a saved meal onto a day/slot cell, or use the dropdown as a keyboard/accessible alternative
 - A "paste a product link" option alongside name search, for branded items: it extracts whatever name/price/image a site's structured product data provides (best-effort, most reliable on sites that publish schema.org/Open Graph product data), and also checks for an embedded nutrition-facts panel (e.g. Target's product pages) before falling back to a FoodData Central name search for macros — all funneled through the same confirm-before-save review step
-- An optional, separate price unit with a "servings per container" count: when a price is for a different quantity than the macro serving size (common with URL-sourced prices, e.g. a whole package vs. a per-serving macro basis), recording how many servings the container has yields an exact per-serving price (`amount / servings_per_container`); without it, that ingredient's price is honestly excluded from planner cost totals rather than computing a misleading number
 - A searchable, typeable ingredient picker in the meal builder ("Foods in this meal") — type to filter existing ingredients, or add a not-yet-saved one inline via the same confirm-before-save flow used elsewhere, without leaving the page
-- Quantity autofill: picking an ingredient defaults its quantity to one full serving (parsed from `serving_unit`), which you can then adjust
-- Per-day calorie/macro totals shown live while building the weekly plan, and again in the saved-plan review
-- Meal management (view, edit foods/quantities) on the home page, alongside ingredients; the planner page keeps a compact, grid-style saved-meals view as the drag source for the calendar
+- Quantity autofill: picking an ingredient defaults its quantity to one of its serving, and the unit field is a dropdown of that ingredient's own servings plus the common mass units (g/kg/oz/lb), rather than free text
+- Per-day calorie/macro totals shown live while building the weekly plan, and again in the saved-plan review — computed via gram-based conversion between whatever unit a meal quantity uses and the ingredient's macro-basis serving
+- Meal management (view, edit, delete foods/quantities) on the home page, alongside ingredients — deleting a meal that's used in a saved plan is warned about first, by plan name, then removes it from those plans; the planner page keeps a compact, grid-style saved-meals view as the drag source for the calendar
+- Meal plans are fully persisted and editable: a "Your saved plans" list on the planner page lets you load any saved plan back into the builder, keep changing it, and save (update) rather than always creating a new one; plans can also be deleted
+- Grocery list generation for a saved plan: converts every meal quantity for an ingredient into grams (via the recognized-mass-unit table or a match against one of the ingredient's own serving labels) and sums them, then — where the price-basis serving has a known gram value — estimates how many containers to buy (`ceil(total grams / price serving grams)`) and the total cost. A quantity that can't be converted (an unrecognized unit with no matching serving) is called out with a note instead of silently dropped or guessed at
 
-## Roadmap: grocery list generation
+## Known limitations
 
-A natural next step, not yet built: generate a shopping list from a saved plan — summing each ingredient's total quantity needed across all assigned meals, then converting that into a container count using `servings_per_container` (e.g. "5 days × 200g yogurt" → "2 containers of Fage 0%, 32 servings each"). The `price_servings_per_container` field added above is exactly the data this needs; nothing else should be required to build it when ready.
+- **Product-link extraction** (`resolve-url`) is intentionally general-purpose and best-effort — it relies on a site publishing schema.org/Open Graph structured data, or embedding a real nutrition-facts panel in its page data (as some retailers, e.g. Target, do), which Amazon does not reliably expose to non-browser requests (their Terms of Service also prohibit automated scraping, so this project doesn't target them specifically). When a site doesn't expose either, macros fall back to a FoodData Central name search and price stays at $0 — expect the confirm dialog to sometimes need manual correction, and note that a price found on the page may refer to a different quantity than the macros (e.g. a whole package vs. a single serving) — the confirm dialog lets you mark a different serving as the price basis when that's the case.
+- **Conversion is gram-based, not a full unit-conversion table.** Every serving that can be used across units needs a gram equivalent — automatic for mass units (g/kg/oz/lb/...), manual for anything else (counts, volumes). A serving with no gram value (e.g. an old "0.66cup" carried over from before a unit's gram weight was known) can still be displayed, but can't be converted to/from other units until a gram value is added — the app says so explicitly rather than fabricating a number. Macros themselves are stored "per" whichever serving is marked as the macro basis, not normalized to per-100g.
 
 ## Architecture at a glance
 
@@ -58,8 +60,14 @@ The backend currently exposes:
 - `GET /api/meals` - list saved meals
 - `POST /api/meals` - create a new meal with specific foods and quantities
 - `PATCH /api/meals/{id}` - update a meal's name/description, or replace its entire ingredient list
+- `GET /api/meals/{id}/usage` - list the names of saved plans that use this meal (used to warn before a cascading delete)
+- `DELETE /api/meals/{id}` - delete a meal, along with any calendar assignments (in saved plans) that reference it
 - `GET /api/meal-plans` - list saved meal plans
+- `GET /api/meal-plans/{id}` - fetch a single saved plan (used to load it back into the planner for editing)
 - `POST /api/meal-plans` - create a new meal plan with day/slot assignments
+- `PATCH /api/meal-plans/{id}` - update a plan's name/dates, or replace its entire assignment list
+- `DELETE /api/meal-plans/{id}` - delete a saved plan
+- `GET /api/meal-plans/{id}/grocery-list` - sum each ingredient's total quantity needed across the plan's assigned meals (converted to grams), with an estimated purchase-container count and cost where the ingredient's price-basis serving has a known gram value
 
 The resolve endpoint checks the local database first. If the ingredient already exists, it's returned directly (`status: "existing"`). If it doesn't, and an external FoodData Central API key is configured, it returns a non-persisted preview (`status: "preview"`) with a `$0.00` placeholder price — the frontend shows a confirm dialog so you can review and edit the values before calling `POST /api/ingredients` to actually save it.
 
@@ -171,10 +179,11 @@ The next milestones should focus on turning this into a fuller meal-planning pro
 
 1. Introduce authentication and user-scoped data
 2. Add recipe entities (meal and meal-plan entities already exist) and a real `/recipes` page
-3. Generate a grocery list from a saved plan (see "Roadmap: grocery list generation" above)
-4. Consider moving from SQLite to PostgreSQL as the domain grows
-
-**Known limitation:** the `resolve-url` product-link extraction is intentionally general-purpose and best-effort — it relies on a site publishing schema.org/Open Graph structured data, or embedding a real nutrition-facts panel in its page data (as some retailers, e.g. Target, do), which Amazon does not reliably expose to non-browser requests (their Terms of Service also prohibit automated scraping, so this project doesn't target them specifically). When a site doesn't expose either, macros fall back to a FoodData Central name search and price stays at $0 — expect the confirm dialog to sometimes need manual correction, and note that a price found on the page may refer to a different quantity than the macros (e.g. a whole package vs. a single serving) — the confirm dialog lets you record the price's own unit separately when that's the case.
+3. Consider moving from SQLite to PostgreSQL as the domain grows
+4. Volume-to-mass conversion (ml/l/cup/tbsp) via a per-ingredient density value — mass units (g/kg/oz/lb) already convert automatically, but a volume serving still needs its gram value entered by hand since converting it otherwise would require guessing a density
+5. Let a meal plan be duplicated as a starting point for a new one ("repeat last week"), now that plans are fully editable and persisted — a common real workflow once you have a plan you're happy with
+6. A lightweight automated test suite, especially for the cascade-delete paths (ingredient → meals → plan assignments) and the grocery-list/cost math — these are the highest-consequence code paths (destructive, multi-table, real currency numbers) and are currently verified only by hand
+7. A "source" indicator per ingredient (manual entry / FDC name search / URL extraction) — as more branded and URL-sourced ingredients accumulate alongside generic FDC matches, it'd help explain why a given ingredient's numbers look the way they do, and make it easy to flag ones worth double-checking
 
 ## Verification notes
 
@@ -183,3 +192,4 @@ The current implementation has been sanity-checked with:
 - `cd frontend && npm run typecheck`
 - `cd backend && python -m compileall app`
 - `cd backend && alembic upgrade head`
+- The multi-serving system was verified end-to-end against the running API: creating an ingredient with several named servings (auto-filling gram values for recognized mass-unit labels), updating its servings, building a meal that mixes a named-serving quantity with a bare-gram quantity and one genuinely unconvertible unit, and generating a grocery list from a saved plan — confirming totals, purchase-count/cost estimates, and the "couldn't convert" note all matched hand-calculated expectations before the disposable test data was deleted

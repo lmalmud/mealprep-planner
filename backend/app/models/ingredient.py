@@ -1,8 +1,13 @@
-from sqlalchemy import Float, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
-from app.schemas.ingredient import IngredientMacros, IngredientPrice, IngredientRead
+from app.schemas.ingredient import (
+    IngredientMacros,
+    IngredientPrice,
+    IngredientRead,
+    IngredientServingRead,
+)
 
 
 class Ingredient(Base):
@@ -10,21 +15,38 @@ class Ingredient(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    # Macro values are "per default serving" — i.e. per whichever IngredientServing
+    # has is_default=True. Converting to any other serving requires both that
+    # serving and the default serving to have a known `grams` value.
     calories_kcal: Mapped[float] = mapped_column(Float, nullable=False)
     protein_g: Mapped[float] = mapped_column(Float, nullable=False)
     carbs_g: Mapped[float] = mapped_column(Float, nullable=False)
     fat_g: Mapped[float] = mapped_column(Float, nullable=False)
     price_amount: Mapped[float] = mapped_column(Float, nullable=False)
     price_currency: Mapped[str] = mapped_column(String(3), nullable=False)
-    price_unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    price_servings_per_container: Mapped[float | None] = mapped_column(Float, nullable=True)
-    serving_unit: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    servings: Mapped[list["IngredientServing"]] = relationship(
+        back_populates="ingredient",
+        cascade="all, delete-orphan",
+    )
+
+    def default_serving(self) -> "IngredientServing | None":
+        return next((serving for serving in self.servings if serving.is_default), None)
+
+    def price_serving(self) -> "IngredientServing | None":
+        return next((serving for serving in self.servings if serving.is_price_serving), None) or self.default_serving()
 
     def to_read(self) -> IngredientRead:
+        default = self.default_serving()
+        price_serving = self.price_serving()
         return IngredientRead(
             id=self.id,
             name=self.name,
-            serving_unit=self.serving_unit,
+            servings=[
+                IngredientServingRead(id=s.id, label=s.label, grams=s.grams, is_default=s.is_default)
+                for s in self.servings
+            ],
+            default_serving_id=default.id if default else None,
             macros=IngredientMacros(
                 calories_kcal=self.calories_kcal,
                 protein_g=self.protein_g,
@@ -34,7 +56,24 @@ class Ingredient(Base):
             price=IngredientPrice(
                 amount=self.price_amount,
                 currency=self.price_currency,
-                unit=self.price_unit,
-                servings_per_container=self.price_servings_per_container,
+                serving_id=price_serving.id if price_serving else None,
             ),
         )
+
+
+class IngredientServing(Base):
+    __tablename__ = "ingredient_servings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    ingredient_id: Mapped[int] = mapped_column(
+        ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    # None means "unknown gram equivalent" (e.g. a plain "1 package" with no
+    # known weight) — this serving can't be converted to/from any other unit
+    # until a real gram value is supplied.
+    grams: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_price_serving: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    ingredient: Mapped[Ingredient] = relationship(back_populates="servings")

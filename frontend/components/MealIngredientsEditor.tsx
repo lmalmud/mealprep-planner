@@ -1,7 +1,6 @@
 "use client";
 
 import IngredientCombobox from "@/components/IngredientCombobox";
-import { parseServingUnit } from "@/lib/units";
 import type { Ingredient } from "@/types/ingredient";
 
 export type MealIngredientDraft = {
@@ -15,6 +14,15 @@ export const EMPTY_MEAL_INGREDIENT_DRAFT: MealIngredientDraft = {
   quantity_amount: "",
   quantity_unit: "g",
 };
+
+const COMMON_MASS_UNITS = ["g", "kg", "oz", "lb"];
+
+function unitOptionsFor(ingredient: Ingredient | undefined): string[] {
+  if (!ingredient) return COMMON_MASS_UNITS;
+  const servingLabels = ingredient.servings.map((s) => s.label);
+  const extras = COMMON_MASS_UNITS.filter((unit) => !servingLabels.includes(unit));
+  return [...servingLabels, ...extras];
+}
 
 type MealIngredientsEditorProps = {
   ingredients: Ingredient[];
@@ -34,15 +42,17 @@ export default function MealIngredientsEditor({
   }
 
   function selectIngredient(index: number, ingredient: Ingredient) {
-    const parsed = parseServingUnit(ingredient.serving_unit);
+    const defaultServing = ingredient.servings.find((s) => s.id === ingredient.default_serving_id);
     onChange(
       entries.map((entry, entryIndex) =>
         entryIndex === index
           ? {
               ...entry,
               ingredient_id: String(ingredient.id),
-              quantity_amount: parsed ? String(parsed.amount) : entry.quantity_amount,
-              quantity_unit: parsed ? parsed.unit : entry.quantity_unit,
+              // Default the quantity to one full serving — a sensible
+              // starting point the user can adjust from there.
+              quantity_amount: "1",
+              quantity_unit: defaultServing?.label ?? entry.quantity_unit,
             }
           : entry
       )
@@ -66,49 +76,61 @@ export default function MealIngredientsEditor({
         </button>
       </div>
 
-      {entries.map((entry, index) => (
-        <div
-          key={`${entry.ingredient_id}-${index}`}
-          className="grid gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 md:grid-cols-[2fr_1fr_1fr_auto]"
-        >
-          <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-            Food
-            <IngredientCombobox
-              ingredients={ingredients}
-              value={entry.ingredient_id}
-              onSelect={(ingredient) => selectIngredient(index, ingredient)}
-              onRequestAdd={(query) => onRequestAdd(index, query)}
-            />
-          </label>
+      {entries.map((entry, index) => {
+        const selectedIngredient = ingredients.find((i) => String(i.id) === entry.ingredient_id);
+        const unitOptions = unitOptionsFor(selectedIngredient);
+        return (
+          <div
+            key={`${entry.ingredient_id}-${index}`}
+            className="grid gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 md:grid-cols-[2fr_1fr_1fr_auto]"
+          >
+            <label className="text-sm font-medium text-[var(--color-fg-muted)]">
+              Food
+              <IngredientCombobox
+                ingredients={ingredients}
+                value={entry.ingredient_id}
+                onSelect={(ingredient) => selectIngredient(index, ingredient)}
+                onRequestAdd={(query) => onRequestAdd(index, query)}
+              />
+            </label>
 
-          <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-            Quantity
-            <input
-              value={entry.quantity_amount}
-              onChange={(event) => updateEntry(index, "quantity_amount", event.target.value)}
-              className="field mt-1"
-              placeholder="200"
-              type="number"
-              min="0"
-              step="0.1"
-            />
-          </label>
+            <label className="text-sm font-medium text-[var(--color-fg-muted)]">
+              Quantity
+              <input
+                value={entry.quantity_amount}
+                onChange={(event) => updateEntry(index, "quantity_amount", event.target.value)}
+                className="field mt-1"
+                placeholder="200"
+                type="number"
+                min="0"
+                step="0.1"
+              />
+            </label>
 
-          <label className="text-sm font-medium text-[var(--color-fg-muted)]">
-            Unit
-            <input
-              value={entry.quantity_unit}
-              onChange={(event) => updateEntry(index, "quantity_unit", event.target.value)}
-              className="field mt-1"
-              placeholder="g"
-            />
-          </label>
+            <label className="text-sm font-medium text-[var(--color-fg-muted)]">
+              Unit
+              <select
+                value={entry.quantity_unit}
+                onChange={(event) => updateEntry(index, "quantity_unit", event.target.value)}
+                className="field mt-1"
+              >
+                {!unitOptions.includes(entry.quantity_unit) ? (
+                  <option value={entry.quantity_unit}>{entry.quantity_unit}</option>
+                ) : null}
+                {unitOptions.map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <button type="button" onClick={() => removeRow(index)} className="btn btn-danger self-end">
-            Remove
-          </button>
-        </div>
-      ))}
+            <button type="button" onClick={() => removeRow(index)} className="btn btn-danger self-end">
+              Remove
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.models.ingredient import Ingredient
+from app.models.ingredient import Ingredient, IngredientServing
 from app.models.meal import Meal, MealIngredient, MealPlanAssignment
 from app.schemas.ingredient import (
     IngredientCreate,
@@ -9,9 +9,11 @@ from app.schemas.ingredient import (
     IngredientPrice,
     IngredientRead,
     IngredientResolveResult,
+    IngredientServingInput,
     IngredientUpdate,
 )
 from app.services.food_data_central_client import FoodDataCentralClient, FoodDataCentralUnavailableError
+from app.services.mass_units import parse_mass_grams
 from app.services.product_url_client import ProductUrlClient
 from app.core.config import settings
 
@@ -21,6 +23,32 @@ url_client = ProductUrlClient()
 
 class IngredientNameConflictError(Exception):
     pass
+
+
+def _serving_input(label: str, *, is_default: bool = False, is_price_serving: bool = False) -> IngredientServingInput:
+    # Auto-fills `grams` whenever the label itself is a parseable mass
+    # quantity (e.g. "154g", "2lb") — the single place this happens so no
+    # caller can forget it, whether building a preview or persisting servings.
+    return IngredientServingInput(
+        label=label,
+        grams=parse_mass_grams(label),
+        is_default=is_default,
+        is_price_serving=is_price_serving,
+    )
+
+
+def _build_servings(inputs: list[IngredientServingInput]) -> list[IngredientServing]:
+    filled = [
+        s if s.grams is not None else s.model_copy(update={"grams": parse_mass_grams(s.label)}) for s in inputs
+    ]
+    if not any(s.is_default for s in filled):
+        filled = [s.model_copy(update={"is_default": i == 0}) for i, s in enumerate(filled)]
+    return [
+        IngredientServing(
+            label=s.label, grams=s.grams, is_default=s.is_default, is_price_serving=s.is_price_serving
+        )
+        for s in filled
+    ]
 
 
 def list_ingredients(db: Session) -> list[IngredientRead]:
@@ -71,7 +99,9 @@ def search_ingredient(db: Session, query: str) -> IngredientResolveResult:
                 existing.protein_g = candidate.protein_g
                 existing.carbs_g = candidate.carbs_g
                 existing.fat_g = candidate.fat_g
-                existing.serving_unit = candidate.serving_unit
+                default = existing.default_serving()
+                if default is not None:
+                    default.label = candidate.serving_unit
                 db.add(existing)
                 db.commit()
                 db.refresh(existing)
@@ -95,7 +125,7 @@ def search_ingredient(db: Session, query: str) -> IngredientResolveResult:
 
     preview = IngredientCreate(
         name=candidate.name,
-        serving_unit=candidate.serving_unit,
+        servings=[_serving_input(candidate.serving_unit, is_default=True)],
         macros=IngredientMacros(
             calories_kcal=candidate.calories_kcal,
             protein_g=candidate.protein_g,
@@ -120,7 +150,7 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
         product.carbs_g,
         product.fat_g,
     )
-    serving_unit = product.serving_unit or "100g"
+    serving_label = product.serving_unit or "100g"
 
     # Only fall back to a name-based FDC search if the page itself didn't
     # already provide any nutrition facts (e.g. Target embeds a real facts
@@ -133,7 +163,7 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
                 protein = fdc_candidate.protein_g
                 carbs = fdc_candidate.carbs_g
                 fat = fdc_candidate.fat_g
-                serving_unit = fdc_candidate.serving_unit
+                serving_label = fdc_candidate.serving_unit
         except FoodDataCentralUnavailableError:
             # A URL-sourced candidate (name/price) is still useful even if macro
             # lookup fails — the confirm dialog lets the user fill macros in by hand.
@@ -145,7 +175,7 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
 
     preview = IngredientCreate(
         name=product.name,
-        serving_unit=serving_unit,
+        servings=[_serving_input(serving_label, is_default=True)],
         macros=IngredientMacros(
             calories_kcal=calories or 0.0,
             protein_g=protein or 0.0,
@@ -163,16 +193,15 @@ def create_ingredient(db: Session, payload: IngredientCreate) -> IngredientRead:
 
     ingredient = Ingredient(
         name=payload.name,
-        serving_unit=payload.serving_unit,
         calories_kcal=payload.macros.calories_kcal,
         protein_g=payload.macros.protein_g,
         carbs_g=payload.macros.carbs_g,
         fat_g=payload.macros.fat_g,
         price_amount=payload.price.amount,
         price_currency=payload.price.currency,
-        price_unit=payload.price.unit,
-        price_servings_per_container=payload.price.servings_per_container,
     )
+    ingredient.servings = _build_servings(payload.servings)
+
     db.add(ingredient)
     db.commit()
     db.refresh(ingredient)
@@ -192,8 +221,6 @@ def update_ingredient(db: Session, ingredient_id: int, payload: IngredientUpdate
             raise IngredientNameConflictError(f"An ingredient named '{updates['name']}' already exists.")
         ingredient.name = updates["name"]
 
-    if "serving_unit" in updates:
-        ingredient.serving_unit = updates["serving_unit"]
     if "calories_kcal" in updates:
         ingredient.calories_kcal = updates["calories_kcal"]
     if "protein_g" in updates:
@@ -206,10 +233,10 @@ def update_ingredient(db: Session, ingredient_id: int, payload: IngredientUpdate
         ingredient.price_amount = updates["price_amount"]
     if "price_currency" in updates:
         ingredient.price_currency = updates["price_currency"]
-    if "price_unit" in updates:
-        ingredient.price_unit = updates["price_unit"]
-    if "price_servings_per_container" in updates:
-        ingredient.price_servings_per_container = updates["price_servings_per_container"]
+
+    if payload.servings is not None:
+        ingredient.servings.clear()
+        ingredient.servings = _build_servings(payload.servings)
 
     db.add(ingredient)
     db.commit()

@@ -73,6 +73,7 @@ export default function IngredientCombobox({
             <button
               key={ingredient.id}
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => handleSelect(ingredient)}
               className="block w-full px-3 py-2 text-left text-sm text-[var(--color-fg)] hover:bg-[var(--color-bg-subtle)]"
             >
@@ -82,6 +83,7 @@ export default function IngredientCombobox({
           {trimmedQuery && !hasExactMatch ? (
             <button
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={handleRequestAdd}
               className="block w-full border-t border-[var(--color-border)] px-3 py-2 text-left text-sm text-[var(--color-accent)] hover:bg-[var(--color-bg-subtle)]"
             >
