@@ -5,6 +5,15 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.services.mass_units import grams_per_mass_unit
+
+# FDC's raw servingSizeUnit is often an internal unit code (e.g. "GRM" for
+# grams, "MLT" for milliliters) rather than a plain word — map the ones we
+# can meaningfully use to the words our own mass-unit table recognizes.
+_FDC_UNIT_ALIASES = {
+    "grm": "g",
+    "mlt": "ml",
+}
 
 # api.data.gov's gateway (which fronts FoodData Central) can return a transient,
 # opaque 404 or 429 under throttling or while a newly-issued key is still
@@ -21,7 +30,17 @@ class FoodDataIngredientCandidate:
     protein_g: float
     carbs_g: float
     fat_g: float
+    fiber_g: float
+    sugar_g: float
+    # FDC's nutrient values are always reported per 100g, so this is always
+    # "100g" — it's the one serving guaranteed to match the macros above.
     serving_unit: str
+    # An additional, more natural serving (e.g. "1 large egg") extracted from
+    # FDC's own package/household serving-size fields, when it converts to a
+    # known gram value. None when FDC didn't provide one, or its unit isn't
+    # one we can convert (e.g. a volume like "ml").
+    extra_serving_label: str | None = None
+    extra_serving_grams: float | None = None
 
 
 class FoodDataCentralUnavailableError(RuntimeError):
@@ -89,6 +108,8 @@ class FoodDataCentralClient:
         protein = 0.0
         carbs = 0.0
         fat = 0.0
+        fiber = 0.0
+        sugar = 0.0
 
         for item in food.get("foodNutrients") or []:
             value = item.get("value")
@@ -110,11 +131,34 @@ class FoodDataCentralClient:
                 carbs = val
             elif "fat" in lower or "lipid" in lower or num in ("204", "1004"):
                 fat = val
+            elif "fiber" in lower or num in ("291", "1079"):
+                fiber = val
+            elif ("sugar" in lower and "added" not in lower) or num in ("269", "2000"):
+                sugar = val
 
-        serving_size = food.get("servingSize")
-        serving_unit = str(food.get("servingSizeUnit") or "serving")
-        if serving_size:
-            serving_unit = f"{serving_size}{serving_unit}".replace(" ", "")
+        # `foodNutrients` values above are always per 100g of the food,
+        # regardless of what package/label serving the food is normally sold
+        # in — so "100g" is the only serving guaranteed to match them. FDC's
+        # own `servingSize`/`servingSizeUnit` describe a real, human-facing
+        # serving (e.g. "1 large egg" = 50g), but using it as the *macro*
+        # basis would silently apply per-100g numbers to a 50g serving.
+        # Surface it as a second, non-default serving instead.
+        extra_label: str | None = None
+        extra_grams: float | None = None
+        raw_size = food.get("servingSize")
+        if raw_size:
+            try:
+                rounded_size = round(float(raw_size), 1)
+            except (TypeError, ValueError):
+                rounded_size = None
+            if rounded_size:
+                raw_unit = str(food.get("servingSizeUnit") or "").strip().lower()
+                unit = _FDC_UNIT_ALIASES.get(raw_unit, raw_unit)
+                grams_per_unit = grams_per_mass_unit(unit)
+                if grams_per_unit is not None:
+                    extra_grams = round(rounded_size * grams_per_unit, 1)
+                    household_text = str(food.get("householdServingFullText") or "").strip()
+                    extra_label = household_text or f"{rounded_size:g}{unit}"
 
         return FoodDataIngredientCandidate(
             name=str(food.get("description") or query).strip(),
@@ -122,5 +166,9 @@ class FoodDataCentralClient:
             protein_g=protein,
             carbs_g=carbs,
             fat_g=fat,
-            serving_unit=serving_unit,
+            fiber_g=fiber,
+            sugar_g=sugar,
+            serving_unit="100g",
+            extra_serving_label=extra_label,
+            extra_serving_grams=extra_grams,
         )

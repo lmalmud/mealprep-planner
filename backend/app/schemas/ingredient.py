@@ -8,6 +8,8 @@ class IngredientMacros(BaseModel):
     protein_g: float = Field(ge=0)
     carbs_g: float = Field(ge=0)
     fat_g: float = Field(ge=0)
+    fiber_g: float = Field(default=0.0, ge=0)
+    sugar_g: float = Field(default=0.0, ge=0)
 
 
 class IngredientServingRead(BaseModel):
@@ -43,6 +45,9 @@ class IngredientRead(BaseModel):
     default_serving_id: int | None
     macros: IngredientMacros
     price: IngredientPrice
+    # An optional link to where this ingredient's data came from (e.g. a
+    # product page) — purely informational, for the user's own reference.
+    source_url: str | None = None
 
 
 class IngredientCreate(BaseModel):
@@ -51,6 +56,7 @@ class IngredientCreate(BaseModel):
     # Per whichever serving has is_default=True (or the first entry if none do).
     macros: IngredientMacros
     price: IngredientPrice
+    source_url: str | None = Field(default=None, max_length=2048)
 
 
 class IngredientUpdate(BaseModel):
@@ -59,8 +65,11 @@ class IngredientUpdate(BaseModel):
     protein_g: float | None = Field(default=None, ge=0)
     carbs_g: float | None = Field(default=None, ge=0)
     fat_g: float | None = Field(default=None, ge=0)
+    fiber_g: float | None = Field(default=None, ge=0)
+    sugar_g: float | None = Field(default=None, ge=0)
     price_amount: float | None = Field(default=None, ge=0)
     price_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    source_url: str | None = Field(default=None, max_length=2048)
     # When provided, replaces the ingredient's entire servings list.
     servings: list[IngredientServingInput] | None = None
 

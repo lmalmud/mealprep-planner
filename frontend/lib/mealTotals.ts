@@ -7,12 +7,23 @@ export type MealTotals = {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
+  sugar: number;
   price: number;
   priceIncomplete: boolean;
 };
 
 export function computeMealTotals(meal: Meal, ingredients: Ingredient[]): MealTotals {
-  const totals: MealTotals = { calories: 0, protein: 0, carbs: 0, fat: 0, price: 0, priceIncomplete: false };
+  const totals: MealTotals = {
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    fiber: 0,
+    sugar: 0,
+    price: 0,
+    priceIncomplete: false,
+  };
 
   for (const item of meal.ingredients) {
     const ing = ingredients.find((i) => i.id === item.ingredient_id);
@@ -31,6 +42,8 @@ export function computeMealTotals(meal: Meal, ingredients: Ingredient[]): MealTo
       totals.protein += (ing.macros.protein_g || 0) * factor;
       totals.carbs += (ing.macros.carbs_g || 0) * factor;
       totals.fat += (ing.macros.fat_g || 0) * factor;
+      totals.fiber += (ing.macros.fiber_g || 0) * factor;
+      totals.sugar += (ing.macros.sugar_g || 0) * factor;
     }
 
     const priceServing = ing.servings.find((s) => s.id === ing.price.serving_id) ?? defaultServing;

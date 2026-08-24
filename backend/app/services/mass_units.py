@@ -43,4 +43,7 @@ def parse_mass_grams(text: str) -> float | None:
     if grams_per_unit is None:
         return None
 
-    return amount * grams_per_unit
+    # Round to the nearest tenth of a gram — conversions like oz/lb otherwise
+    # produce long floating-point tails (e.g. "5.4321000000000004g") that are
+    # meaningless at food-serving precision.
+    return round(amount * grams_per_unit, 1)

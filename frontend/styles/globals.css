@@ -184,6 +184,8 @@
     border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
     box-shadow: var(--shadow-modal);
+    max-height: min(85vh, 100%);
+    overflow-y: auto;
   }
 
   .link-subtle {

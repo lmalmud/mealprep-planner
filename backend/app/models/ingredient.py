@@ -22,8 +22,13 @@ class Ingredient(Base):
     protein_g: Mapped[float] = mapped_column(Float, nullable=False)
     carbs_g: Mapped[float] = mapped_column(Float, nullable=False)
     fat_g: Mapped[float] = mapped_column(Float, nullable=False)
+    fiber_g: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    sugar_g: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     price_amount: Mapped[float] = mapped_column(Float, nullable=False)
     price_currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # A source page for this ingredient's data (e.g. the product URL it was
+    # extracted from) — purely informational, kept for the user's own reference.
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     servings: Mapped[list["IngredientServing"]] = relationship(
         back_populates="ingredient",
@@ -52,12 +57,15 @@ class Ingredient(Base):
                 protein_g=self.protein_g,
                 carbs_g=self.carbs_g,
                 fat_g=self.fat_g,
+                fiber_g=self.fiber_g,
+                sugar_g=self.sugar_g,
             ),
             price=IngredientPrice(
                 amount=self.price_amount,
                 currency=self.price_currency,
                 serving_id=price_serving.id if price_serving else None,
             ),
+            source_url=self.source_url,
         )
 
 

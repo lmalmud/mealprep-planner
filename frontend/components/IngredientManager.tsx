@@ -3,25 +3,21 @@
 import { useState } from "react";
 import { deleteIngredient, getIngredientUsage, updateIngredient } from "@/services/ingredients";
 import { useIngredientSearch } from "@/hooks/useIngredientSearch";
-import { parseMassGrams } from "@/lib/units";
-import type { Ingredient, IngredientServingInput, IngredientUpdateInput } from "@/types/ingredient";
+import ServingsEditor, { buildServingInputs, draftFromServing, type ServingDraft } from "@/components/ServingsEditor";
+import type { Ingredient, IngredientUpdateInput } from "@/types/ingredient";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import IngredientConfirmDialog from "@/components/IngredientConfirmDialog";
 import IngredientQuickAddPanel from "@/components/IngredientQuickAddPanel";
 
-type ServingDraft = {
-  label: string;
-  grams: string;
-  isDefault: boolean;
-  isPriceServing: boolean;
-};
-
 type EditDraft = {
   name: string;
+  source_url: string;
   calories_kcal: string;
   protein_g: string;
   carbs_g: string;
   fat_g: string;
+  fiber_g: string;
+  sugar_g: string;
   price_amount: string;
   price_currency: string;
   servings: ServingDraft[];
@@ -30,18 +26,18 @@ type EditDraft = {
 function toDraft(ingredient: Ingredient): EditDraft {
   return {
     name: ingredient.name,
+    source_url: ingredient.source_url ?? "",
     calories_kcal: String(ingredient.macros.calories_kcal),
     protein_g: String(ingredient.macros.protein_g),
     carbs_g: String(ingredient.macros.carbs_g),
     fat_g: String(ingredient.macros.fat_g),
+    fiber_g: String(ingredient.macros.fiber_g),
+    sugar_g: String(ingredient.macros.sugar_g),
     price_amount: String(ingredient.price.amount),
     price_currency: ingredient.price.currency,
-    servings: ingredient.servings.map((s) => ({
-      label: s.label,
-      grams: s.grams != null ? String(s.grams) : "",
-      isDefault: s.id === ingredient.default_serving_id,
-      isPriceServing: s.id === ingredient.price.serving_id,
-    })),
+    servings: ingredient.servings.map((s) =>
+      draftFromServing(s.label, s.grams, s.id === ingredient.default_serving_id, s.id === ingredient.price.serving_id)
+    ),
   };
 }
 
@@ -101,70 +97,15 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
     setEditError("");
   }
 
-  function updateServing(index: number, patch: Partial<ServingDraft>) {
-    setEditDraft((previous) =>
-      previous ? { ...previous, servings: previous.servings.map((s, i) => (i === index ? { ...s, ...patch } : s)) } : previous
-    );
-  }
-
-  function updateServingLabel(index: number, label: string) {
-    setEditDraft((previous) => {
-      if (!previous) return previous;
-      return {
-        ...previous,
-        servings: previous.servings.map((s, i) => {
-          if (i !== index) return s;
-          const autoGrams = parseMassGrams(label);
-          const shouldAutoFill = autoGrams !== null && (s.grams === "" || parseMassGrams(s.label) === Number(s.grams));
-          return { ...s, label, grams: shouldAutoFill ? String(autoGrams) : s.grams };
-        }),
-      };
-    });
-  }
-
-  function setAsDefault(index: number) {
-    setEditDraft((previous) =>
-      previous ? { ...previous, servings: previous.servings.map((s, i) => ({ ...s, isDefault: i === index })) } : previous
-    );
-  }
-
-  function setAsPriceServing(index: number) {
-    setEditDraft((previous) =>
-      previous ? { ...previous, servings: previous.servings.map((s, i) => ({ ...s, isPriceServing: i === index })) } : previous
-    );
-  }
-
-  function addServing() {
-    setEditDraft((previous) =>
-      previous
-        ? { ...previous, servings: [...previous.servings, { label: "", grams: "", isDefault: false, isPriceServing: false }] }
-        : previous
-    );
-  }
-
-  function removeServing(index: number) {
-    setEditDraft((previous) => {
-      if (!previous) return previous;
-      const next = previous.servings.filter((_, i) => i !== index);
-      if (!next.length) return previous;
-      if (!next.some((s) => s.isDefault)) next[0] = { ...next[0], isDefault: true };
-      if (!next.some((s) => s.isPriceServing)) next[0] = { ...next[0], isPriceServing: true };
-      return { ...previous, servings: next };
-    });
+  function updateServings(servings: ServingDraft[]) {
+    setEditDraft((previous) => (previous ? { ...previous, servings } : previous));
   }
 
   async function saveEdit(id: number) {
     if (!editDraft) return;
     setEditError("");
 
-    const servings: IngredientServingInput[] = editDraft.servings
-      .filter((s) => s.label.trim())
-      .map((s) => ({
-        label: s.label.trim(),
-        grams: s.grams.trim() ? Number(s.grams) : null,
-        is_default: s.isDefault,
-        is_price_serving: s.isPriceServing,
-      }));
+    const servings = buildServingInputs(editDraft.servings);
 
     if (!servings.length) {
       setEditError("Add at least one serving.");
@@ -173,10 +114,13 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
 
     const payload: IngredientUpdateInput = {
       name: editDraft.name.trim(),
+      source_url: editDraft.source_url.trim() || null,
       calories_kcal: Number(editDraft.calories_kcal) || 0,
       protein_g: Number(editDraft.protein_g) || 0,
       carbs_g: Number(editDraft.carbs_g) || 0,
       fat_g: Number(editDraft.fat_g) || 0,
+      fiber_g: Number(editDraft.fiber_g) || 0,
+      sugar_g: Number(editDraft.sugar_g) || 0,
       price_amount: Number(editDraft.price_amount) || 0,
       price_currency: editDraft.price_currency.trim() || "USD",
       servings,
@@ -252,6 +196,8 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
               <th className="px-4 py-3 font-medium">Protein (g)</th>
               <th className="px-4 py-3 font-medium">Carbs (g)</th>
               <th className="px-4 py-3 font-medium">Fat (g)</th>
+              <th className="px-4 py-3 font-medium">Fiber (g)</th>
+              <th className="px-4 py-3 font-medium">Sugar (g)</th>
               <th className="px-4 py-3 font-medium">Servings &amp; units</th>
               <th className="px-4 py-3 font-medium">Price</th>
               <th className="px-4 py-3 font-medium">Actions</th>
@@ -272,11 +218,19 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                   {isEditing && editDraft ? (
                     <>
                       <td className="px-4 py-3">
-                        <input
-                          value={editDraft.name}
-                          onChange={(event) => setEditDraft({ ...editDraft, name: event.target.value })}
-                          className="field field-sm w-32"
-                        />
+                        <div className="flex flex-col gap-1">
+                          <input
+                            value={editDraft.name}
+                            onChange={(event) => setEditDraft({ ...editDraft, name: event.target.value })}
+                            className="field field-sm w-32"
+                          />
+                          <input
+                            value={editDraft.source_url}
+                            onChange={(event) => setEditDraft({ ...editDraft, source_url: event.target.value })}
+                            className="field field-sm w-32"
+                            placeholder="Link (optional)"
+                          />
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -311,55 +265,28 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex min-w-[16rem] flex-col gap-1.5">
-                          {editDraft.servings.map((serving, index) => (
-                            <div key={index} className="flex items-center gap-1">
-                              <input
-                                value={serving.label}
-                                onChange={(event) => updateServingLabel(index, event.target.value)}
-                                className="field field-sm w-24"
-                                placeholder="e.g. 1 apple"
-                              />
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                value={serving.grams}
-                                onChange={(event) => updateServing(index, { grams: event.target.value })}
-                                className="field field-sm w-16"
-                                placeholder="g"
-                              />
-                              <label className="flex items-center gap-0.5 text-xs text-[var(--color-fg-muted)]" title="Macros basis">
-                                <input
-                                  type="radio"
-                                  name={`default-serving-${ingredient.id}`}
-                                  checked={serving.isDefault}
-                                  onChange={() => setAsDefault(index)}
-                                />
-                                M
-                              </label>
-                              <label className="flex items-center gap-0.5 text-xs text-[var(--color-fg-muted)]" title="Price basis">
-                                <input
-                                  type="radio"
-                                  name={`price-serving-${ingredient.id}`}
-                                  checked={serving.isPriceServing}
-                                  onChange={() => setAsPriceServing(index)}
-                                />
-                                $
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => removeServing(index)}
-                                disabled={editDraft.servings.length <= 1}
-                                className="btn btn-danger btn-sm"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
-                          <button type="button" onClick={addServing} className="btn btn-secondary btn-sm self-start">
-                            Add unit
-                          </button>
+                        <input
+                          type="number"
+                          value={editDraft.fiber_g}
+                          onChange={(event) => setEditDraft({ ...editDraft, fiber_g: event.target.value })}
+                          className="field field-sm w-20"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          value={editDraft.sugar_g}
+                          onChange={(event) => setEditDraft({ ...editDraft, sugar_g: event.target.value })}
+                          className="field field-sm w-20"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="min-w-[22rem]">
+                          <ServingsEditor
+                            servings={editDraft.servings}
+                            onChange={updateServings}
+                            idPrefix={`ingredient-${ingredient.id}`}
+                          />
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -379,7 +306,7 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                             />
                           </div>
                           <p className="text-xs text-[var(--color-fg-faint)]">
-                            For whichever unit is marked &quot;$&quot; on the left.
+                            For the unit chosen as &quot;Price above is for&quot; on the left.
                           </p>
                         </div>
                       </td>
@@ -411,11 +338,26 @@ export default function IngredientManager({ initialIngredients }: { initialIngre
                     </>
                   ) : (
                     <>
-                      <td className="px-4 py-3 font-medium text-[var(--color-fg)]">{ingredient.name}</td>
+                      <td className="px-4 py-3 font-medium text-[var(--color-fg)]">
+                        {ingredient.name}
+                        {ingredient.source_url ? (
+                          <a
+                            href={ingredient.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link-subtle ml-1.5 text-xs font-normal"
+                            title={ingredient.source_url}
+                          >
+                            🔗
+                          </a>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3">{ingredient.macros.calories_kcal}</td>
                       <td className="px-4 py-3">{ingredient.macros.protein_g}</td>
                       <td className="px-4 py-3">{ingredient.macros.carbs_g}</td>
                       <td className="px-4 py-3">{ingredient.macros.fat_g}</td>
+                      <td className="px-4 py-3">{ingredient.macros.fiber_g}</td>
+                      <td className="px-4 py-3">{ingredient.macros.sugar_g}</td>
                       <td className="px-4 py-3 text-[var(--color-fg-faint)]">
                         <div>per {defaultServing?.label ?? "—"}</div>
                         {ingredient.servings.length > 1 ? (

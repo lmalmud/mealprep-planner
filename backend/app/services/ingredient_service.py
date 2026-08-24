@@ -12,7 +12,11 @@ from app.schemas.ingredient import (
     IngredientServingInput,
     IngredientUpdate,
 )
-from app.services.food_data_central_client import FoodDataCentralClient, FoodDataCentralUnavailableError
+from app.services.food_data_central_client import (
+    FoodDataCentralClient,
+    FoodDataCentralUnavailableError,
+    FoodDataIngredientCandidate,
+)
 from app.services.mass_units import parse_mass_grams
 from app.services.product_url_client import ProductUrlClient
 from app.core.config import settings
@@ -35,6 +39,24 @@ def _serving_input(label: str, *, is_default: bool = False, is_price_serving: bo
         is_default=is_default,
         is_price_serving=is_price_serving,
     )
+
+
+def _servings_for_fdc_candidate(candidate: FoodDataIngredientCandidate) -> list[IngredientServingInput]:
+    # `candidate.serving_unit` is always "100g" — the one serving guaranteed
+    # to match FDC's per-100g macro values. Its own package/household
+    # serving (e.g. "1 large egg"), when known, is added as a convenience
+    # unit alongside it, not as the macro basis.
+    servings = [_serving_input(candidate.serving_unit, is_default=True, is_price_serving=True)]
+    if candidate.extra_serving_label and candidate.extra_serving_grams:
+        servings.append(
+            IngredientServingInput(
+                label=candidate.extra_serving_label,
+                grams=candidate.extra_serving_grams,
+                is_default=False,
+                is_price_serving=False,
+            )
+        )
+    return servings
 
 
 def _build_servings(inputs: list[IngredientServingInput]) -> list[IngredientServing]:
@@ -99,9 +121,12 @@ def search_ingredient(db: Session, query: str) -> IngredientResolveResult:
                 existing.protein_g = candidate.protein_g
                 existing.carbs_g = candidate.carbs_g
                 existing.fat_g = candidate.fat_g
+                existing.fiber_g = candidate.fiber_g
+                existing.sugar_g = candidate.sugar_g
                 default = existing.default_serving()
                 if default is not None:
                     default.label = candidate.serving_unit
+                    default.grams = parse_mass_grams(candidate.serving_unit)
                 db.add(existing)
                 db.commit()
                 db.refresh(existing)
@@ -125,12 +150,14 @@ def search_ingredient(db: Session, query: str) -> IngredientResolveResult:
 
     preview = IngredientCreate(
         name=candidate.name,
-        servings=[_serving_input(candidate.serving_unit, is_default=True)],
+        servings=_servings_for_fdc_candidate(candidate),
         macros=IngredientMacros(
             calories_kcal=candidate.calories_kcal,
             protein_g=candidate.protein_g,
             carbs_g=candidate.carbs_g,
             fat_g=candidate.fat_g,
+            fiber_g=candidate.fiber_g,
+            sugar_g=candidate.sugar_g,
         ),
         price=IngredientPrice(amount=0.0, currency="USD"),
     )
@@ -150,7 +177,9 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
         product.carbs_g,
         product.fat_g,
     )
-    serving_label = product.serving_unit or "100g"
+    fiber = 0.0
+    sugar = 0.0
+    servings = [_serving_input(product.serving_unit or "100g", is_default=True, is_price_serving=True)]
 
     # Only fall back to a name-based FDC search if the page itself didn't
     # already provide any nutrition facts (e.g. Target embeds a real facts
@@ -163,7 +192,9 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
                 protein = fdc_candidate.protein_g
                 carbs = fdc_candidate.carbs_g
                 fat = fdc_candidate.fat_g
-                serving_label = fdc_candidate.serving_unit
+                fiber = fdc_candidate.fiber_g
+                sugar = fdc_candidate.sugar_g
+                servings = _servings_for_fdc_candidate(fdc_candidate)
         except FoodDataCentralUnavailableError:
             # A URL-sourced candidate (name/price) is still useful even if macro
             # lookup fails — the confirm dialog lets the user fill macros in by hand.
@@ -175,14 +206,17 @@ def search_ingredient_by_url(db: Session, url: str) -> IngredientResolveResult:
 
     preview = IngredientCreate(
         name=product.name,
-        servings=[_serving_input(serving_label, is_default=True)],
+        servings=servings,
         macros=IngredientMacros(
             calories_kcal=calories or 0.0,
             protein_g=protein or 0.0,
             carbs_g=carbs or 0.0,
             fat_g=fat or 0.0,
+            fiber_g=fiber,
+            sugar_g=sugar,
         ),
         price=IngredientPrice(amount=product.price_amount or 0.0, currency=currency),
+        source_url=url,
     )
     return IngredientResolveResult(status="preview", candidate=preview)
 
@@ -197,8 +231,11 @@ def create_ingredient(db: Session, payload: IngredientCreate) -> IngredientRead:
         protein_g=payload.macros.protein_g,
         carbs_g=payload.macros.carbs_g,
         fat_g=payload.macros.fat_g,
+        fiber_g=payload.macros.fiber_g,
+        sugar_g=payload.macros.sugar_g,
         price_amount=payload.price.amount,
         price_currency=payload.price.currency,
+        source_url=payload.source_url,
     )
     ingredient.servings = _build_servings(payload.servings)
 
@@ -229,10 +266,16 @@ def update_ingredient(db: Session, ingredient_id: int, payload: IngredientUpdate
         ingredient.carbs_g = updates["carbs_g"]
     if "fat_g" in updates:
         ingredient.fat_g = updates["fat_g"]
+    if "fiber_g" in updates:
+        ingredient.fiber_g = updates["fiber_g"]
+    if "sugar_g" in updates:
+        ingredient.sugar_g = updates["sugar_g"]
     if "price_amount" in updates:
         ingredient.price_amount = updates["price_amount"]
     if "price_currency" in updates:
         ingredient.price_currency = updates["price_currency"]
+    if "source_url" in updates:
+        ingredient.source_url = updates["source_url"]
 
     if payload.servings is not None:
         ingredient.servings.clear()

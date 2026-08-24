@@ -3,6 +3,8 @@ export type IngredientMacros = {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g: number;
+  sugar_g: number;
 };
 
 export type IngredientServing = {
@@ -35,6 +37,7 @@ export type Ingredient = {
   default_serving_id: number | null;
   macros: IngredientMacros;
   price: IngredientPrice;
+  source_url: string | null;
 };
 
 export type IngredientInput = {
@@ -42,6 +45,7 @@ export type IngredientInput = {
   servings: IngredientServingInput[];
   macros: IngredientMacros;
   price: { amount: number; currency: string };
+  source_url?: string | null;
 };
 
 export type IngredientUpdateInput = Partial<{
@@ -50,8 +54,11 @@ export type IngredientUpdateInput = Partial<{
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fiber_g: number;
+  sugar_g: number;
   price_amount: number;
   price_currency: string;
+  source_url: string | null;
   servings: IngredientServingInput[];
 }>;
 
