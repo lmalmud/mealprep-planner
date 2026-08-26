@@ -15,18 +15,21 @@ export type Meal = {
   id: number;
   name: string;
   description: string;
+  total_servings: number;
   ingredients: MealIngredient[];
 };
 
 export type MealCreatePayload = {
   name: string;
   description: string;
+  total_servings: number;
   ingredients: MealIngredientInput[];
 };
 
 export type MealUpdatePayload = Partial<{
   name: string;
   description: string;
+  total_servings: number;
   ingredients: MealIngredientInput[];
 }>;
 
@@ -35,6 +38,7 @@ export type MealPlanAssignment = {
   slot: string;
   meal_id: number;
   meal_name: string;
+  servings: number;
 };
 
 export type MealPlan = {
@@ -49,6 +53,7 @@ export type MealPlanAssignmentPayload = {
   day_index: number;
   slot: string;
   meal_id: number;
+  servings: number;
 };
 
 export type MealPlanCreatePayload = {

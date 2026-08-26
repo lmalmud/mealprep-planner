@@ -24,7 +24,7 @@ def list_meals(db: Session) -> list[MealRead]:
 
 
 def create_meal(db: Session, payload: MealCreate) -> MealRead:
-    meal = Meal(name=payload.name, description=payload.description)
+    meal = Meal(name=payload.name, description=payload.description, total_servings=payload.total_servings)
 
     for item_payload in payload.ingredients:
         ingredient = db.get(Ingredient, item_payload.ingredient_id)
@@ -55,6 +55,8 @@ def update_meal(db: Session, meal_id: int, payload: MealUpdate) -> MealRead:
         meal.name = updates["name"]
     if "description" in updates:
         meal.description = updates["description"]
+    if "total_servings" in updates:
+        meal.total_servings = updates["total_servings"]
 
     if payload.ingredients is not None:
         for item_payload in payload.ingredients:
@@ -122,6 +124,7 @@ def create_meal_plan(db: Session, payload: MealPlanCreate) -> MealPlanRead:
                 day_index=assignment_payload.day_index,
                 slot=assignment_payload.slot,
                 meal_id=assignment_payload.meal_id,
+                servings=assignment_payload.servings,
             )
         )
 
@@ -167,6 +170,7 @@ def update_meal_plan(db: Session, plan_id: int, payload: MealPlanUpdate) -> Meal
                     day_index=assignment_payload.day_index,
                     slot=assignment_payload.slot,
                     meal_id=assignment_payload.meal_id,
+                    servings=assignment_payload.servings,
                 )
             )
 
@@ -213,15 +217,17 @@ def generate_grocery_list(db: Session, plan_id: int) -> list[GroceryListItem]:
         meal = db.get(Meal, assignment.meal_id)
         if meal is None:
             continue
+        servings_factor = assignment.servings / meal.total_servings
         for item in meal.ingredients:
             ingredient = db.get(Ingredient, item.ingredient_id)
             if ingredient is None:
                 continue
-            grams = _grams_for_quantity(item.quantity_amount, item.quantity_unit, ingredient)
+            scaled_amount = item.quantity_amount * servings_factor
+            grams = _grams_for_quantity(scaled_amount, item.quantity_unit, ingredient)
             if grams is not None:
                 grams_totals[item.ingredient_id] = grams_totals.get(item.ingredient_id, 0.0) + grams
             else:
-                unresolved.setdefault(item.ingredient_id, []).append((item.quantity_amount, item.quantity_unit))
+                unresolved.setdefault(item.ingredient_id, []).append((scaled_amount, item.quantity_unit))
 
     items: list[GroceryListItem] = []
     for ingredient_id in set(grams_totals) | set(unresolved):

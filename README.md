@@ -26,6 +26,8 @@ The project is now beyond a simple scaffold. The current implementation includes
 - Per-day calorie/macro totals shown live while building the weekly plan, and again in the saved-plan review — computed via gram-based conversion between whatever unit a meal quantity uses and the ingredient's macro-basis serving
 - Meal management (view, edit, delete foods/quantities) on the home page, alongside ingredients — deleting a meal that's used in a saved plan is warned about first, by plan name, then removes it from those plans; the planner page keeps a compact, grid-style saved-meals view as the drag source for the calendar
 - Meal plans are fully persisted and editable: a "Your saved plans" list on the planner page lets you load any saved plan back into the builder, keep changing it, and save (update) rather than always creating a new one; plans can also be deleted
+- Recipes ("meals") declare how many servings they make (`total_servings`, default 1). A day/slot in a plan can hold any number of items — a recipe alongside a standalone snack, for instance — and each one independently specifies how many of the recipe's servings it draws (defaulting to 1 serving when added, editable per slot); calorie/macro/price totals and the grocery list scale proportionally (`servings drawn / total_servings`)
+- Meal calorie/macro summaries (on the planner and the home page's saved-meals list) default to showing per-serving numbers, with a "Per serving / Whole recipe" toggle to see either
 - Grocery list generation for a saved plan: converts every meal quantity for an ingredient into grams (via the recognized-mass-unit table or a match against one of the ingredient's own serving labels) and sums them, then — where the price-basis serving has a known gram value — estimates how many containers to buy (`ceil(total grams / price serving grams)`) and the total cost. A quantity that can't be converted (an unrecognized unit with no matching serving) is called out with a note instead of silently dropped or guessed at
 
 ## Known limitations
@@ -87,6 +89,16 @@ Once environment files exist (see step 1 below), a single script starts and stop
 ```
 
 It creates the virtualenv and installs dependencies on first run if needed, applies pending Alembic migrations, and waits for both services to respond before returning. Logs are written to `.run/backend.log` and `.run/frontend.log`.
+
+### Desktop launcher (macOS)
+
+To start the app by double-clicking an icon instead of using a terminal, run this once:
+
+```bash
+./scripts/install-desktop-launcher.sh
+```
+
+This creates `Macro & Market.app` on your Desktop, with its own icon (`scripts/assets/AppIcon.icns`). Double-clicking it opens a Terminal window running `./scripts/dev.sh start` (so you can see startup progress) and then opens `http://localhost:3000` in your browser once it's ready. The script is safe to re-run any time — it rebuilds the bundle from scratch, ad-hoc code-signs it, and clears any quarantine flag, which is also the fix if macOS ever reports the app as "damaged" (this happens to any unsigned local `.app` that Gatekeeper hasn't seen before).
 
 ## Local development
 
@@ -186,6 +198,7 @@ The next milestones should focus on turning this into a fuller meal-planning pro
 5. Let a meal plan be duplicated as a starting point for a new one ("repeat last week"), now that plans are fully editable and persisted — a common real workflow once you have a plan you're happy with
 6. A lightweight automated test suite, especially for the cascade-delete paths (ingredient → meals → plan assignments) and the grocery-list/cost math — these are the highest-consequence code paths (destructive, multi-table, real currency numbers) and are currently verified only by hand
 7. A "source" indicator per ingredient (manual entry / FDC name search / URL extraction) — as more branded and URL-sourced ingredients accumulate alongside generic FDC matches, it'd help explain why a given ingredient's numbers look the way they do, and make it easy to flag ones worth double-checking
+8. Barcode scanning — a "scan" option alongside name search and "paste a product link," using the device camera in the browser (the native `BarcodeDetector` API where supported, with a JS fallback like `@zxing/browser` for broader compatibility) to decode a UPC/EAN and look it up. FoodData Central's Branded Foods data already includes UPC/GTIN codes, so this could reuse the existing FDC integration for the lookup itself (a new search-by-barcode path rather than a new data source); Open Food Facts is a free, barcode-first alternative worth pairing it with for products FDC doesn't have. The result would land in the same confirm-before-save review dialog already used everywhere else
 
 ## Verification notes
 

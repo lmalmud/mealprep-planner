@@ -47,21 +47,20 @@ import GroceryListView from "@/components/GroceryListView";
 
 const PLANNER_SLOTS = ["breakfast", "lunch", "dinner", "snack"];
 
-// Builds a full day×slot grid (every combination present, even when
-// unassigned) so `updateAssignment`'s .map()-based update always finds a
-// matching entry to update — a sparse array would silently no-op for any
-// cell that wasn't already in it.
-function buildAssignmentGrid(
-  days: number,
-  existing: { day_index: number; slot: string; meal_id: number }[] = []
-): MealPlanAssignmentPayload[] {
-  return Array.from({ length: Math.max(1, days) }, (_, dayIndex) =>
-    PLANNER_SLOTS.map((slot) => ({
-      day_index: dayIndex,
-      slot,
-      meal_id: existing.find((a) => a.day_index === dayIndex && a.slot === slot)?.meal_id ?? 0,
-    }))
-  ).flat();
+// A calendar assignment as it's edited client-side: a plan can hold any
+// number of items per day/slot (a recipe and a protein bar in the same
+// "lunch" cell, for instance), so each row needs a stable local identity to
+// add/edit/remove individually — `clientKey` never leaves the browser.
+type AssignmentDraft = MealPlanAssignmentPayload & { clientKey: string };
+
+function newClientKey(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `key-${Math.random().toString(36).slice(2)}`;
+}
+
+function draftsFromAssignments(existing: MealPlanAssignmentPayload[] = []): AssignmentDraft[] {
+  return existing.map((assignment) => ({ ...assignment, clientKey: newClientKey() }));
 }
 
 export default function PlannerPage() {
@@ -69,10 +68,12 @@ export default function PlannerPage() {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [mealName, setMealName] = useState("");
   const [mealDescription, setMealDescription] = useState("");
+  const [mealTotalServings, setMealTotalServings] = useState("1");
   const [mealIngredients, setMealIngredients] = useState<MealIngredientDraft[]>([
     { ...EMPTY_MEAL_INGREDIENT_DRAFT },
   ]);
   const [mealFeedback, setMealFeedback] = useState("");
+  const [showPerServing, setShowPerServing] = useState(true);
   const [creatingMeal, setCreatingMeal] = useState(false);
   const [addingForRowIndex, setAddingForRowIndex] = useState<number | null>(null);
 
@@ -106,7 +107,7 @@ export default function PlannerPage() {
   const [planName, setPlanName] = useState("My 7-Day Plan");
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [durationDays, setDurationDays] = useState(7);
-  const [assignments, setAssignments] = useState<MealPlanAssignmentPayload[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentDraft[]>([]);
   const [creatingPlan, setCreatingPlan] = useState(false);
   const [planFeedback, setPlanFeedback] = useState("");
   const [createdPlan, setCreatedPlan] = useState<MealPlan | null>(null);
@@ -140,7 +141,8 @@ export default function PlannerPage() {
   }, []);
 
   useEffect(() => {
-    setAssignments((previous) => buildAssignmentGrid(Number(durationDays) || 1, previous));
+    const days = Number(durationDays) || 1;
+    setAssignments((previous) => previous.filter((assignment) => assignment.day_index < days));
   }, [durationDays]);
 
   function requestAddIngredientForRow(index: number, query: string) {
@@ -154,6 +156,12 @@ export default function PlannerPage() {
 
     if (!mealName.trim()) {
       setMealFeedback("Please give the meal a name.");
+      return;
+    }
+
+    const totalServings = Number(mealTotalServings);
+    if (!Number.isFinite(totalServings) || totalServings <= 0) {
+      setMealFeedback("Servings this recipe makes must be a positive number.");
       return;
     }
 
@@ -173,6 +181,7 @@ export default function PlannerPage() {
     const payload: MealCreatePayload = {
       name: mealName.trim(),
       description: mealDescription.trim(),
+      total_servings: totalServings,
       ingredients: normalizedIngredients,
     };
 
@@ -182,6 +191,7 @@ export default function PlannerPage() {
       setMeals((previous) => [createdMeal, ...previous]);
       setMealName("");
       setMealDescription("");
+      setMealTotalServings("1");
       setMealIngredients([{ ...EMPTY_MEAL_INGREDIENT_DRAFT }]);
       setMealFeedback(`Created meal “${createdMeal.name}”.`);
     } catch (error) {
@@ -191,14 +201,31 @@ export default function PlannerPage() {
     }
   }
 
-  function updateAssignment(dayIndex: number, slot: string, mealId: number) {
+  function addAssignment(dayIndex: number, slot: string, mealId: number) {
+    setAssignments((previous) => [
+      ...previous,
+      {
+        day_index: dayIndex,
+        slot,
+        meal_id: mealId,
+        servings: 1,
+        clientKey: newClientKey(),
+      },
+    ]);
+  }
+
+  function updateAssignmentServings(clientKey: string, servings: number) {
     setAssignments((previous) =>
       previous.map((assignment) =>
-        assignment.day_index === dayIndex && assignment.slot === slot
-          ? { ...assignment, meal_id: mealId }
+        assignment.clientKey === clientKey && Number.isFinite(servings) && servings > 0
+          ? { ...assignment, servings }
           : assignment
       )
     );
+  }
+
+  function removeAssignment(clientKey: string) {
+    setAssignments((previous) => previous.filter((assignment) => assignment.clientKey !== clientKey));
   }
 
   const [activeDragMealId, setActiveDragMealId] = useState<number | null>(null);
@@ -219,7 +246,7 @@ export default function PlannerPage() {
     const mealId = (active.data.current as { mealId?: number } | undefined)?.mealId;
     const target = over.data.current as { dayIndex: number; slot: string } | undefined;
     if (!mealId || !target) return;
-    updateAssignment(target.dayIndex, target.slot, mealId);
+    addAssignment(target.dayIndex, target.slot, mealId);
   }
 
   async function handleCreatePlan(event: FormEvent<HTMLFormElement>) {
@@ -231,8 +258,7 @@ export default function PlannerPage() {
       return;
     }
 
-    const filledAssignments = assignments.filter((assignment) => assignment.meal_id > 0);
-    if (!filledAssignments.length) {
+    if (!assignments.length) {
       setPlanFeedback("Assign at least one meal to the calendar before saving your plan.");
       return;
     }
@@ -241,7 +267,7 @@ export default function PlannerPage() {
       name: planName.trim(),
       start_date: startDate,
       duration_days: Math.max(1, Number(durationDays) || 1),
-      assignments: filledAssignments,
+      assignments: assignments.map(({ clientKey, ...rest }) => rest),
     };
 
     try {
@@ -269,7 +295,7 @@ export default function PlannerPage() {
     setPlanName(plan.name);
     setStartDate(plan.start_date);
     setDurationDays(plan.duration_days);
-    setAssignments(buildAssignmentGrid(plan.duration_days, plan.assignments));
+    setAssignments(draftsFromAssignments(plan.assignments));
     setCreatedPlan(plan);
     setPlanFeedback(`Editing “${plan.name}” — change the calendar below, then save.`);
   }
@@ -279,7 +305,7 @@ export default function PlannerPage() {
     setPlanName("My 7-Day Plan");
     setStartDate(new Date().toISOString().slice(0, 10));
     setDurationDays(7);
-    setAssignments(buildAssignmentGrid(7));
+    setAssignments([]);
     setCreatedPlan(null);
     setPlanFeedback("");
   }
@@ -316,17 +342,12 @@ export default function PlannerPage() {
     }
   }
 
-  function getAssignmentMealId(dayIndex: number, slot: string) {
-    return assignments.find((assignment) => assignment.day_index === dayIndex && assignment.slot === slot)?.meal_id ?? 0;
-  }
-
-  function computeDayTotals(assignmentsForDay: { slot: string; meal_id: number }[]) {
+  function computeDayTotals(assignmentsForDay: { meal_id: number; servings: number }[]) {
     const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-    for (const slot of PLANNER_SLOTS) {
-      const mealId = assignmentsForDay.find((assignment) => assignment.slot === slot)?.meal_id ?? 0;
-      const meal = meals.find((m) => m.id === mealId);
+    for (const assignment of assignmentsForDay) {
+      const meal = meals.find((m) => m.id === assignment.meal_id);
       if (!meal) continue;
-      const t = computeMealTotals(meal, ingredients);
+      const t = computeMealTotals(meal, ingredients, assignment.servings / meal.total_servings);
       totals.calories += t.calories;
       totals.protein += t.protein;
       totals.carbs += t.carbs;
@@ -341,7 +362,7 @@ export default function PlannerPage() {
     for (const assignment of plan.assignments) {
       const meal = meals.find((m) => m.id === assignment.meal_id);
       if (!meal) continue;
-      const t = computeMealTotals(meal, ingredients);
+      const t = computeMealTotals(meal, ingredients, assignment.servings / meal.total_servings);
       totals.calories += t.calories;
       totals.protein += t.protein;
       totals.carbs += t.carbs;
@@ -396,6 +417,17 @@ export default function PlannerPage() {
                   onChange={(event) => setMealDescription(event.target.value)}
                   className="field mt-1"
                   placeholder="Lunch for the week"
+                />
+              </label>
+              <label className="block text-sm font-medium text-[var(--color-fg-muted)]">
+                Makes how many servings
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={mealTotalServings}
+                  onChange={(event) => setMealTotalServings(event.target.value)}
+                  className="field mt-1"
                 />
               </label>
             </div>
@@ -481,19 +513,42 @@ export default function PlannerPage() {
 
         <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <section className="surface-card p-6">
-            <h3 className="text-xl">Saved meals</h3>
-            <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
-              Drag a meal onto the calendar below to assign it, or use the dropdown in each cell. Manage full
-              details (edit, ingredients) from the home page.
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xl">Saved meals</h3>
+                <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
+                  Drag a meal onto the calendar below to assign it, or use the dropdown in each cell. Manage full
+                  details (edit, ingredients) from the home page.
+                </p>
+              </div>
+              <div className="flex gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] p-1">
+                <button
+                  type="button"
+                  onClick={() => setShowPerServing(true)}
+                  className={`btn btn-sm ${showPerServing ? "btn-primary" : "btn-secondary"}`}
+                >
+                  Per serving
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPerServing(false)}
+                  className={`btn btn-sm ${!showPerServing ? "btn-primary" : "btn-secondary"}`}
+                >
+                  Whole recipe
+                </button>
+              </div>
+            </div>
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {meals.length ? (
                 meals.map((meal) => {
-                  const totals = computeMealTotals(meal, ingredients);
+                  const totals = computeMealTotals(meal, ingredients, showPerServing ? 1 / meal.total_servings : 1);
                   return (
                     <DraggableMealCard key={meal.id} meal={meal}>
                       <div className="truncate text-sm font-medium text-[var(--color-fg)]">{meal.name}</div>
-                      <div className="text-xs text-[var(--color-fg-faint)]">{totals.calories.toFixed(0)} cal</div>
+                      <div className="text-xs text-[var(--color-fg-faint)]">
+                        {totals.calories.toFixed(0)} cal {showPerServing ? "/ serving" : "total"} · makes{" "}
+                        {meal.total_servings}
+                      </div>
                     </DraggableMealCard>
                   );
                 })
@@ -565,30 +620,68 @@ export default function PlannerPage() {
                   </thead>
                   <tbody>
                     {Array.from({ length: Math.max(1, Number(durationDays) || 1) }, (_, dayIndex) => {
-                      const dayAssignments = PLANNER_SLOTS.map((slot) => ({
-                        slot,
-                        meal_id: getAssignmentMealId(dayIndex, slot),
-                      }));
+                      const dayAssignments = assignments.filter((assignment) => assignment.day_index === dayIndex);
                       const dayTotals = computeDayTotals(dayAssignments);
                       return (
                         <tr key={dayIndex} className="border-b border-[var(--color-border)] last:border-b-0">
                           <td className="px-3 py-3 font-medium text-[var(--color-fg)]">Day {dayIndex + 1}</td>
-                          {PLANNER_SLOTS.map((slot) => (
-                            <CalendarDropCell key={`${dayIndex}-${slot}`} dayIndex={dayIndex} slot={slot}>
-                              <select
-                                value={getAssignmentMealId(dayIndex, slot)}
-                                onChange={(event) => updateAssignment(dayIndex, slot, Number(event.target.value))}
-                                className="field field-sm"
-                              >
-                                <option value="0">Select a meal</option>
-                                {meals.map((meal) => (
-                                  <option key={meal.id} value={meal.id}>
-                                    {meal.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </CalendarDropCell>
-                          ))}
+                          {PLANNER_SLOTS.map((slot) => {
+                            const cellAssignments = dayAssignments.filter((assignment) => assignment.slot === slot);
+                            return (
+                              <CalendarDropCell key={`${dayIndex}-${slot}`} dayIndex={dayIndex} slot={slot}>
+                                <div className="flex flex-col gap-1">
+                                  {cellAssignments.map((assignment) => {
+                                    const meal = meals.find((m) => m.id === assignment.meal_id);
+                                    return (
+                                      <div
+                                        key={assignment.clientKey}
+                                        className="flex items-center gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] px-2 py-1"
+                                      >
+                                        <span className="min-w-0 flex-1 truncate text-xs" title={meal?.name}>
+                                          {meal?.name ?? "Unknown meal"}
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.5"
+                                          value={assignment.servings}
+                                          onChange={(event) =>
+                                            updateAssignmentServings(assignment.clientKey, Number(event.target.value))
+                                          }
+                                          title="Servings"
+                                          className="field field-sm w-14"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => removeAssignment(assignment.clientKey)}
+                                          className="text-xs text-[var(--color-fg-faint)] hover:text-[var(--color-danger)]"
+                                          aria-label={`Remove ${meal?.name ?? "meal"} from this slot`}
+                                        >
+                                          ×
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                  <select
+                                    value=""
+                                    onChange={(event) => {
+                                      const mealId = Number(event.target.value);
+                                      if (mealId) addAssignment(dayIndex, slot, mealId);
+                                      event.target.value = "";
+                                    }}
+                                    className="field field-sm"
+                                  >
+                                    <option value="">+ Add a meal</option>
+                                    {meals.map((meal) => (
+                                      <option key={meal.id} value={meal.id}>
+                                        {meal.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </CalendarDropCell>
+                            );
+                          })}
                           <td className="px-3 py-3 text-[var(--color-fg-muted)]">
                             {dayTotals.calories > 0 ? (
                               <>
@@ -681,7 +774,7 @@ export default function PlannerPage() {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {PLANNER_SLOTS.map((slot) => {
-                        const assignment = createdPlan.assignments.find(
+                        const slotAssignments = createdPlan.assignments.filter(
                           (entry) => entry.day_index === dayIndex && entry.slot === slot
                         );
                         return (
@@ -690,7 +783,9 @@ export default function PlannerPage() {
                             className="rounded-full border border-[var(--color-border)] px-3 py-1 text-sm text-[var(--color-fg-muted)]"
                           >
                             <span className="font-medium capitalize text-[var(--color-fg)]">{slot}:</span>{" "}
-                            {assignment?.meal_name ?? "—"}
+                            {slotAssignments.length
+                              ? slotAssignments.map((a) => `${a.meal_name} (${a.servings}x)`).join(", ")
+                              : "—"}
                           </span>
                         );
                       })}

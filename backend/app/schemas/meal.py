@@ -17,12 +17,14 @@ class MealIngredientRead(BaseModel):
 class MealCreate(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
+    total_servings: float = Field(default=1.0, gt=0)
     ingredients: list[MealIngredientCreate] = Field(default_factory=list)
 
 
 class MealUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     description: str | None = None
+    total_servings: float | None = Field(default=None, gt=0)
     # When provided, replaces the meal's entire ingredient list.
     ingredients: list[MealIngredientCreate] | None = None
 
@@ -31,6 +33,7 @@ class MealRead(BaseModel):
     id: int
     name: str
     description: str
+    total_servings: float
     ingredients: list[MealIngredientRead]
 
 
@@ -38,6 +41,7 @@ class MealPlanAssignmentCreate(BaseModel):
     day_index: int = Field(ge=0)
     slot: str = Field(min_length=1)
     meal_id: int = Field(ge=1)
+    servings: float = Field(default=1.0, gt=0)
 
 
 class MealPlanAssignmentRead(BaseModel):
@@ -46,6 +50,7 @@ class MealPlanAssignmentRead(BaseModel):
     slot: str
     meal_id: int
     meal_name: str
+    servings: float
 
 
 class MealPlanCreate(BaseModel):

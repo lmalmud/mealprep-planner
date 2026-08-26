@@ -16,6 +16,7 @@ class Meal(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=True)
+    total_servings: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
     ingredients: Mapped[list["MealIngredient"]] = relationship(
         back_populates="meal",
@@ -27,6 +28,7 @@ class Meal(Base):
             id=self.id,
             name=self.name,
             description=self.description or "",
+            total_servings=self.total_servings,
             ingredients=[
                 MealIngredientRead(
                     ingredient_id=item.ingredient_id,
@@ -83,6 +85,7 @@ class MealPlanAssignment(Base):
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
     slot: Mapped[str] = mapped_column(String(50), nullable=False)
     meal_id: Mapped[int] = mapped_column(ForeignKey("meals.id"), nullable=False)
+    servings: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
     meal_plan: Mapped[MealPlan] = relationship(back_populates="assignments")
     meal: Mapped[Meal] = relationship()
@@ -94,4 +97,5 @@ class MealPlanAssignment(Base):
             slot=self.slot,
             meal_id=self.meal_id,
             meal_name=self.meal.name,
+            servings=self.servings,
         )

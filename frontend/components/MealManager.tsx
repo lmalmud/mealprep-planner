@@ -16,6 +16,7 @@ import type { Meal } from "@/types/meal";
 type EditDraft = {
   name: string;
   description: string;
+  totalServings: string;
   ingredients: MealIngredientDraft[];
 };
 
@@ -23,6 +24,7 @@ function toDraft(meal: Meal): EditDraft {
   return {
     name: meal.name,
     description: meal.description,
+    totalServings: String(meal.total_servings),
     ingredients: meal.ingredients.length
       ? meal.ingredients.map((item) => ({
           ingredient_id: String(item.ingredient_id),
@@ -42,6 +44,7 @@ export default function MealManager({
 }) {
   const [meals, setMeals] = useState<Meal[]>(initialMeals);
   const [ingredients, setIngredients] = useState<Ingredient[]>(initialIngredients);
+  const [showPerServing, setShowPerServing] = useState(true);
   const [editingMealId, setEditingMealId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -93,6 +96,12 @@ export default function MealManager({
       return;
     }
 
+    const totalServings = Number(editDraft.totalServings);
+    if (!Number.isFinite(totalServings) || totalServings <= 0) {
+      setEditError("Servings this recipe makes must be a positive number.");
+      return;
+    }
+
     const normalizedIngredients = editDraft.ingredients
       .filter((entry) => entry.ingredient_id && entry.quantity_amount)
       .map((entry) => ({
@@ -111,6 +120,7 @@ export default function MealManager({
       const updated = await updateMeal(id, {
         name: editDraft.name.trim(),
         description: editDraft.description.trim(),
+        total_servings: totalServings,
         ingredients: normalizedIngredients,
       });
       setMeals((previous) => previous.map((meal) => (meal.id === id ? updated : meal)));
@@ -160,11 +170,11 @@ export default function MealManager({
   }
 
   function renderMealSummary(meal: Meal) {
-    const totals = computeMealTotals(meal, ingredients);
+    const totals = computeMealTotals(meal, ingredients, showPerServing ? 1 / meal.total_servings : 1);
     return (
       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[var(--color-fg-muted)]">
         <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
-          {totals.calories.toFixed(0)} cal
+          {totals.calories.toFixed(0)} cal {showPerServing ? "/ serving" : "total"}
         </span>
         <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-3 py-1">
           P {totals.protein.toFixed(1)}g
@@ -187,8 +197,24 @@ export default function MealManager({
 
   return (
     <section className="pt-10">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl">Saved meals</h2>
+        <div className="flex gap-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] p-1">
+          <button
+            type="button"
+            onClick={() => setShowPerServing(true)}
+            className={`btn btn-sm ${showPerServing ? "btn-primary" : "btn-secondary"}`}
+          >
+            Per serving
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowPerServing(false)}
+            className={`btn btn-sm ${!showPerServing ? "btn-primary" : "btn-secondary"}`}
+          >
+            Whole recipe
+          </button>
+        </div>
       </div>
       <p className="mt-1 text-sm text-[var(--color-fg-muted)]">
         Create new meals from the planner page. Edit their foods and quantities here.
@@ -216,6 +242,17 @@ export default function MealManager({
                         <input
                           value={editDraft.description}
                           onChange={(event) => setEditDraft({ ...editDraft, description: event.target.value })}
+                          className="field mt-1"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-[var(--color-fg-muted)]">
+                        Makes how many servings
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={editDraft.totalServings}
+                          onChange={(event) => setEditDraft({ ...editDraft, totalServings: event.target.value })}
                           className="field mt-1"
                         />
                       </label>
@@ -259,6 +296,7 @@ export default function MealManager({
                       {meal.description ? (
                         <div className="text-sm text-[var(--color-fg-muted)]">{meal.description}</div>
                       ) : null}
+                      <div className="text-sm text-[var(--color-fg-faint)]">Makes {meal.total_servings} serving(s)</div>
                       <ul className="mt-2 text-sm text-[var(--color-fg-muted)]">
                         {meal.ingredients.map((item) => (
                           <li key={item.ingredient_id}>

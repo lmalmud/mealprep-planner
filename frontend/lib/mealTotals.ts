@@ -13,7 +13,7 @@ export type MealTotals = {
   priceIncomplete: boolean;
 };
 
-export function computeMealTotals(meal: Meal, ingredients: Ingredient[]): MealTotals {
+export function computeMealTotals(meal: Meal, ingredients: Ingredient[], servingsFactor = 1): MealTotals {
   const totals: MealTotals = {
     calories: 0,
     protein: 0,
@@ -54,6 +54,14 @@ export function computeMealTotals(meal: Meal, ingredients: Ingredient[]): MealTo
       totals.priceIncomplete = true;
     }
   }
+
+  totals.calories *= servingsFactor;
+  totals.protein *= servingsFactor;
+  totals.carbs *= servingsFactor;
+  totals.fat *= servingsFactor;
+  totals.fiber *= servingsFactor;
+  totals.sugar *= servingsFactor;
+  totals.price *= servingsFactor;
 
   return totals;
 }
