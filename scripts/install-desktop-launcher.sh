@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 #
-# One-time setup: creates a "Macro & Market.app" on your Desktop. Double-click
-# it any time to start the backend + frontend (in a visible Terminal window,
-# via ./scripts/dev.sh start) and open the app in your browser once it's up.
+# One-time setup: creates a "Macro & Market.app" on your Desktop. It's a
+# toggle: double-click it when the app isn't running to start the backend +
+# frontend (in a visible Terminal window, via ./scripts/dev.sh start) and
+# open the app in your browser once it's up; double-click it again while
+# running to stop both (./scripts/dev.sh stop) — the same icon does both,
+# based on whether anything is currently listening on ports 8000/3000.
 #
 #   ./scripts/install-desktop-launcher.sh
 #
@@ -61,7 +64,7 @@ cat > "$APP_DIR/Contents/MacOS/launch" <<LAUNCH
 osascript <<'OSA'
 tell application "Terminal"
   activate
-  do script "cd '${ROOT_DIR}' && ./scripts/dev.sh start && open http://localhost:3000"
+  do script "cd '${ROOT_DIR}' && if lsof -ti :8000 -sTCP:LISTEN >/dev/null 2>&1 || lsof -ti :3000 -sTCP:LISTEN >/dev/null 2>&1; then ./scripts/dev.sh stop; else ./scripts/dev.sh start && open http://localhost:3000; fi"
 end tell
 OSA
 LAUNCH
@@ -82,4 +85,4 @@ touch "$APP_DIR"
 killall Finder >/dev/null 2>&1 || true
 
 echo "Created \"$APP_DIR\""
-echo "Double-click it from your Desktop any time to start Macro & Market."
+echo "Double-click it from your Desktop to start Macro & Market — double-click again to stop it."
